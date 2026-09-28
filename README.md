@@ -46,8 +46,20 @@ the CDN.
   button, `$…$` / `$$…$$` math via KaTeX, ```mermaid diagrams, task lists,
   tables, footnote-free front matter, and `> [!NOTE]` style alerts. Relative
   links to other Markdown files open in the viewer; relative images work.
+- **Tables** with long text (the kind LLMs produce for ledgers and matrices)
+  get a small toolbar above them with four views and two toggles:
+  *Table* gives the long column most of the width and keeps the header stuck
+  to the top while you scroll; *Cards* turns each row into a card with the
+  short columns as a meta line; *Rows* shows label / value pairs per row;
+  *Collapse* trims long cells to three lines so you can scan the bold leads
+  and click a row to expand it; *Wide* breaks the table out to the full pane
+  width. Click a header to sort, type in the filter box to keep only matching
+  rows. Choices persist per table. The *Long-text tables* setting picks the
+  default view (Auto uses Cards for prose-heavy tables, Table otherwise).
+  Rows that an LLM separated from their table with a blank line, and so lost
+  their header, are re-attached automatically.
 - **Settings** (⚙): theme, font size, serif or sans, content width, line
-  height. Everything, including open tabs and scroll positions, persists in
+  height, default table view. Everything, including open tabs and scroll positions, persists in
   the browser per set of roots.
 
 ## Shortcuts

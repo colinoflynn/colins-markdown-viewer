@@ -71,7 +71,7 @@ const api = {
 const DEFAULTS = {
   theme: 'system', fontSize: 16, width: 'normal', lineHeight: '1.6', font: 'sans',
   sidebar: true, outline: true, sidebarWidth: 280, follow: true, showAll: false,
-  recentOpen: true, treeOpen: true,
+  recentOpen: true, treeOpen: true, tableView: 'auto',
 };
 const settings = Object.assign({}, DEFAULTS, store.get('mdview.settings', {}));
 const saveSettings = () => store.set('mdview.settings', settings);
@@ -145,10 +145,42 @@ function setupMarkdown() {
 
 const FM_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 
+/* LLMs often break a long table with blank lines; the rows after the gap have
+   no header, so GFM renders them as paragraphs full of pipes. Re-attach rows
+   that follow a table after only blank lines and have the same column count. */
+function mergeOrphanTableRows(src) {
+  if (!src.includes('|')) return src;
+  const lines = src.split('\n');
+  const out = [];
+  const isRow = l => /^\s*\|/.test(l) && /\|\s*$/.test(l);
+  const isSep = l => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
+  const ncols = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
+  let i = 0, fence = false;
+  while (i < lines.length) {
+    const l = lines[i];
+    if (/^\s*(```|~~~)/.test(l)) fence = !fence;
+    if (!fence && isRow(l) && i + 1 < lines.length && isSep(lines[i + 1])) {
+      const cols = ncols(l);
+      out.push(l, lines[i + 1]); i += 2;
+      for (;;) {
+        while (i < lines.length && isRow(lines[i])) out.push(lines[i++]);
+        let j = i;
+        while (j < lines.length && lines[j].trim() === '') j++;
+        if (j > i && j < lines.length && isRow(lines[j]) && ncols(lines[j]) === cols && !(j + 1 < lines.length && isSep(lines[j + 1]))) { i = j; continue; }
+        break;
+      }
+      continue;
+    }
+    out.push(l); i++;
+  }
+  return out.join('\n');
+}
+
 function renderMarkdown(content, docPath) {
   let fm = null, body = content;
   const fmm = FM_RE.exec(content);
   if (fmm) { fm = fmm[1]; body = content.slice(fmm[0].length); }
+  body = mergeOrphanTableRows(body);
   let html;
   try { html = marked.parse(body); }
   catch (e) { html = `<pre class="pane-error">${escapeHtml(String(e))}</pre>`; }
@@ -234,6 +266,148 @@ function postProcess(art, docPath) {
     bq.classList.add('alert', 'alert-' + kind);
     bq.prepend(el('div', { class: 'alert-title' }, kind[0].toUpperCase() + kind.slice(1)));
   }
+  enhanceTables(art, docPath);
+}
+
+/* ---- tables: Table / Cards / Rows views, collapse, wide, sort, filter */
+function tablePrefs(docPath) { return (store.get('mdview.tables', {}) || {})[normPath(docPath)] || {}; }
+function saveTablePref(docPath, ti, pref) {
+  const all = store.get('mdview.tables', {}) || {};
+  const k = normPath(docPath);
+  all[k] = all[k] || {};
+  all[k][ti] = Object.assign(all[k][ti] || {}, pref);
+  store.set('mdview.tables', all);
+}
+function cloneCell(td) { const s = el('span', { class: 'cell-clone' }); for (const n of td.childNodes) s.append(n.cloneNode(true)); return s; }
+function cellNum(s) { const t = s.replace(/[,\s%]/g, ''); return t !== '' && !isNaN(t) ? parseFloat(t) : null; }
+
+function enhanceTables(art, docPath) {
+  const prefs = tablePrefs(docPath);
+  $$('table', art).forEach((table, ti) => {
+    const ths = $$('thead th', table);
+    const rows = $$('tbody tr', table).map((tr, i) => ({ tr, i, cells: $$('td', tr) }));
+    if (!ths.length) return;
+    const labels = ths.map(th => th.textContent.trim());
+    const len = (r, c) => r.cells[c] ? r.cells[c].textContent.length : 0;
+    const avg = labels.map((_, c) => rows.length ? rows.reduce((s, r) => s + len(r, c), 0) / rows.length : 0);
+    const max = labels.map((_, c) => rows.reduce((m, r) => Math.max(m, len(r, c)), 0));
+    const prose = avg.some(a => a > 160) || max.some(m => m > 600);
+    let longCols = avg.map((a, c) => a > 80 || max[c] > 300);
+    if (!longCols.some(Boolean) && rows.length) { const best = avg.indexOf(Math.max(...avg)); longCols = avg.map((_, c) => c === best); }
+    const nLong = longCols.filter(Boolean).length;
+    // in the table view, give long columns a width share so short ones stop hogging space
+    if (prose) {
+      const sum = avg.reduce((a, b) => a + b, 0) || 1;
+      labels.forEach((_, c) => { if (longCols[c]) ths[c].style.width = Math.min(85, Math.max(45, Math.round(100 * avg[c] / sum))) + '%'; });
+    }
+
+    // column classes; long cells get an inner wrapper so they can be clamped
+    labels.forEach((_, c) => {
+      const cls = longCols[c] ? 'col-long' : (max[c] <= 40 ? 'col-short' : '');
+      if (cls) ths[c].classList.add(cls);
+      for (const r of rows) {
+        const td = r.cells[c]; if (!td) continue;
+        if (cls) td.classList.add(cls);
+        if (longCols[c]) { const d = el('div', { class: 'cell' }); d.append(...Array.from(td.childNodes)); td.append(d); }
+      }
+    });
+    for (const r of rows) r.text = r.cells.map(td => td.textContent).join(' ').toLowerCase();
+
+    const wrap = el('div', { class: 'tbl' + (prose ? ' prose' : '') });
+    const scroll = el('div', { class: 'tbl-scroll' });
+    table.replaceWith(wrap);
+    scroll.append(table);
+    if (rows.length < 2 && !prose) { wrap.append(scroll); return; }
+    const cardsEl = el('div', { class: 'tbl-cards', hidden: true });
+    const stackEl = el('div', { class: 'tbl-stack', hidden: true });
+
+    // toolbar
+    const p = prefs[ti] || {};
+    const count = el('span', { class: 'tbl-count' });
+    const filter = el('input', { class: 'tbl-filter', type: 'search', placeholder: 'filter rows…', spellcheck: 'false' });
+    const seg = el('div', { class: 'seg' });
+    for (const [v, lab] of [['table', 'Table'], ['cards', 'Cards'], ['rows', 'Rows']]) {
+      seg.append(el('button', { type: 'button', dataset: { v }, onclick: () => { setView(v); saveTablePref(docPath, ti, { view: v }); } }, lab));
+    }
+    const clampBtn = el('button', { type: 'button', class: 'tbl-tog', title: 'Show only the first lines of long cells; click a row to expand it' }, 'Collapse');
+    clampBtn.addEventListener('click', () => { setClamp(!wrap.classList.contains('clamp')); saveTablePref(docPath, ti, { clamp: wrap.classList.contains('clamp') }); });
+    const wideBtn = el('button', { type: 'button', class: 'tbl-tog', title: 'Use the full width of the pane' }, 'Wide');
+    wideBtn.addEventListener('click', () => { wrap.classList.toggle('wide'); wideBtn.classList.toggle('on', wrap.classList.contains('wide')); saveTablePref(docPath, ti, { wide: wrap.classList.contains('wide') }); });
+    const bar = el('div', { class: 'tbl-bar' }, seg, clampBtn, wideBtn, el('span', { class: 'spacer' }), rows.length >= 5 ? filter : null, count);
+    wrap.append(bar, scroll, cardsEl, stackEl);
+
+    // alternative views, built on first use
+    function buildCard(r) {
+      const meta = el('div', { class: 'tcard-meta' }, el('span', { class: 'tcard-n' }, r.i + 1));
+      const body = el('div', { class: 'tcard-body' });
+      labels.forEach((lab, c) => {
+        const td = r.cells[c]; if (!td) return;
+        if (longCols[c]) body.append(nLong > 1 ? el('div', { class: 'tcard-sec' }, el('div', { class: 'tcard-label' }, lab), cloneCell(td)) : cloneCell(td));
+        else meta.append(el('span', { class: 'tcard-kv' }, el('b', {}, lab), cloneCell(td)));
+      });
+      return el('div', { class: 'tcard' }, meta, body);
+    }
+    function buildStack(r) {
+      const d = el('div', { class: 'trow' }, el('div', { class: 'trow-n' }, r.i + 1));
+      labels.forEach((lab, c) => { const td = r.cells[c]; if (!td) return; d.append(el('div', { class: 'trow-k' }, lab), el('div', { class: 'trow-v' }, cloneCell(td))); });
+      return d;
+    }
+    function setView(v) {
+      if (v === 'cards' && !cardsEl.childElementCount) for (const r of rows) { r.card = buildCard(r); cardsEl.append(r.card); }
+      if (v === 'rows' && !stackEl.childElementCount) for (const r of rows) { r.stack = buildStack(r); stackEl.append(r.stack); }
+      wrap.dataset.view = v;
+      scroll.hidden = v !== 'table'; cardsEl.hidden = v !== 'cards'; stackEl.hidden = v !== 'rows';
+      for (const b of seg.children) b.classList.toggle('on', b.dataset.v === v);
+      applyFilter();
+    }
+    function setClamp(on) { wrap.classList.toggle('clamp', on); clampBtn.classList.toggle('on', on); }
+    wrap.addEventListener('click', e => {
+      if (!wrap.classList.contains('clamp') || e.target.closest('a, button, input, thead')) return;
+      const row = e.target.closest('tr, .tcard, .trow');
+      if (row && wrap.contains(row)) row.classList.toggle('expanded');
+    });
+
+    // filter
+    function applyFilter() {
+      const q = filter.value.trim().toLowerCase();
+      let shown = 0;
+      for (const r of rows) {
+        const hide = q !== '' && !r.text.includes(q);
+        r.tr.hidden = hide; if (r.card) r.card.hidden = hide; if (r.stack) r.stack.hidden = hide;
+        if (!hide) shown++;
+      }
+      count.textContent = q ? `${shown} of ${rows.length} rows` : `${rows.length} rows`;
+    }
+    filter.addEventListener('input', applyFilter);
+    filter.addEventListener('keydown', e => { if (e.key === 'Escape') { filter.value = ''; applyFilter(); } });
+
+    // sort by clicking a header: ascending, descending, original
+    let sortCol = -1, sortDir = 0;
+    ths.forEach((th, c) => {
+      th.classList.add('sortable'); th.title = 'Click to sort';
+      th.append(el('span', { class: 'sort-ind' }));
+      th.addEventListener('click', () => {
+        if (sortCol !== c) { sortCol = c; sortDir = 1; } else sortDir = sortDir === 1 ? -1 : sortDir === -1 ? 0 : 1;
+        ths.forEach((t, k) => { t.querySelector('.sort-ind').textContent = k === sortCol && sortDir ? (sortDir > 0 ? '▲' : '▼') : ''; });
+        const ordered = [...rows];
+        if (sortDir) {
+          ordered.sort((a, b) => {
+            const ta = a.cells[c]?.textContent.trim() || '', tb = b.cells[c]?.textContent.trim() || '';
+            const na = cellNum(ta), nb = cellNum(tb);
+            const r = (na !== null && nb !== null) ? na - nb : ta.localeCompare(tb, undefined, { numeric: true, sensitivity: 'base' });
+            return r * sortDir || a.i - b.i;
+          });
+        } else ordered.sort((a, b) => a.i - b.i);
+        const tbody = table.tBodies[0];
+        for (const r of ordered) { tbody.append(r.tr); if (r.card) cardsEl.append(r.card); if (r.stack) stackEl.append(r.stack); }
+      });
+    });
+
+    const def = settings.tableView === 'auto' ? (prose ? 'cards' : 'table') : settings.tableView;
+    setView(p.view || def);
+    setClamp(!!p.clamp);
+    if (p.wide) { wrap.classList.add('wide'); wideBtn.classList.add('on'); }
+  });
 }
 
 async function renderMermaidIn(root, onDone) {
@@ -1036,7 +1210,11 @@ function applySettings() {
   saveSettings();
   const t = activeTab(); if (t) updateOutlineCurrent(t);
 }
-for (const seg of $$('.seg[data-setting]')) for (const b of $$('button', seg)) b.addEventListener('click', () => { settings[seg.dataset.setting] = b.dataset.v; applySettings(); });
+for (const seg of $$('.seg[data-setting]')) for (const b of $$('button', seg)) b.addEventListener('click', () => {
+  settings[seg.dataset.setting] = b.dataset.v; applySettings();
+  if (seg.dataset.setting === 'tableView') rerenderAll();
+});
+function rerenderAll() { for (const t of allTabs()) { t.renderedKey = null; renderTab(t); } }
 $('#font-dec').addEventListener('click', () => { settings.fontSize = Math.max(10, settings.fontSize - 1); applySettings(); });
 $('#font-inc').addEventListener('click', () => { settings.fontSize = Math.min(32, settings.fontSize + 1); applySettings(); });
 $('#follow').addEventListener('change', e => { settings.follow = e.target.checked; saveSettings(); });
