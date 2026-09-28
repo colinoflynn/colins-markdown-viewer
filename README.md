@@ -57,7 +57,9 @@ the CDN.
   rows. Choices persist per table. The *Long-text tables* setting picks the
   default view (Auto uses Cards for prose-heavy tables, Table otherwise).
   Rows that an LLM separated from their table with a blank line, and so lost
-  their header, are re-attached automatically.
+  their header, are re-attached automatically, and a stray unescaped `|` in a
+  cell's prose is folded back into the cell instead of silently eating the
+  columns after it.
 - **Settings** (⚙): theme, font size, serif or sans, content width, line
   height, default table view. Everything, including open tabs and scroll positions, persists in
   the browser per set of roots.

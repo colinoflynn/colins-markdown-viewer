@@ -148,11 +148,47 @@ const FM_RE = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/;
 /* LLMs often break a long table with blank lines; the rows after the gap have
    no header, so GFM renders them as paragraphs full of pipes. Re-attach rows
    that follow a table after only blank lines and have the same column count. */
+/* A pipe inside a code span still splits a GFM table cell unless written as
+   "\|". LLMs forget that, so escape such pipes on table rows for them. */
+function escapeCodePipes(l) {
+  if (!l.includes('`') || !l.includes('|')) return l;
+  let out = '', open = 0;
+  for (let i = 0; i < l.length; i++) {
+    const ch = l[i];
+    if (ch === '`') {
+      let n = 1; while (l[i + n] === '`') n++;
+      if (!open) open = n; else if (open === n) open = 0;
+      out += l.slice(i, i + n); i += n - 1; continue;
+    }
+    if (ch === '|' && open && l[i - 1] !== '\\') { out += '\\|'; continue; }
+    out += ch;
+  }
+  return open ? l : out; // unbalanced backticks: leave the line alone
+}
+
+/* A row with MORE cells than the header has a stray "|" in its prose, and GFM
+   would silently drop the surplus cells. Merge the surplus back into the
+   adjacent cells whose combined text is longest (where prose lives). */
+function fixRowCells(l, cols) {
+  const m = /^(\s*\|)([\s\S]*)(\|\s*)$/.exec(l);
+  if (!m) return l;
+  const cells = m[2].split(/(?<!\\)\|/);
+  const k = cells.length - cols;
+  if (k <= 0) return l;
+  let best = 0, bestLen = -1;
+  for (let i = 0; i + k < cells.length; i++) {
+    const len = cells.slice(i, i + k + 1).join('').length;
+    if (len > bestLen) { bestLen = len; best = i; }
+  }
+  const merged = cells.slice(best, best + k + 1).join('\\|');
+  return m[1] + [...cells.slice(0, best), merged, ...cells.slice(best + k + 1)].join('|') + m[3];
+}
+
 function mergeOrphanTableRows(src) {
   if (!src.includes('|')) return src;
-  const lines = src.split('\n');
-  const out = [];
   const isRow = l => /^\s*\|/.test(l) && /\|\s*$/.test(l);
+  const lines = src.split('\n').map(l => isRow(l) ? escapeCodePipes(l) : l);
+  const out = [];
   const isSep = l => /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(l);
   const ncols = l => l.trim().replace(/^\|/, '').replace(/\|$/, '').split(/(?<!\\)\|/).length;
   let i = 0, fence = false;
@@ -163,10 +199,14 @@ function mergeOrphanTableRows(src) {
       const cols = ncols(l);
       out.push(l, lines[i + 1]); i += 2;
       for (;;) {
-        while (i < lines.length && isRow(lines[i])) out.push(lines[i++]);
+        while (i < lines.length && isRow(lines[i])) out.push(fixRowCells(lines[i++], cols));
+        // orphan rows: same table continues after blank lines with no new header
         let j = i;
         while (j < lines.length && lines[j].trim() === '') j++;
-        if (j > i && j < lines.length && isRow(lines[j]) && ncols(lines[j]) === cols && !(j + 1 < lines.length && isSep(lines[j + 1]))) { i = j; continue; }
+        if (j > i && j < lines.length && isRow(lines[j]) && !(j + 1 < lines.length && isSep(lines[j + 1]))) {
+          const n = ncols(fixRowCells(lines[j], cols));
+          if (n === cols || n === cols - 1) { i = j; continue; }
+        }
         break;
       }
       continue;
