@@ -1,0 +1,73 @@
+# mdview
+
+A fast local Markdown viewer for reading LLM output. One Python file serves a
+browser UI; no packages to install.
+
+## Run
+
+```bash
+python server.py D:\some\folder D:\another\folder
+```
+
+or, from the folder you want to browse:
+
+```bash
+D:\Dropbox\academic\claude_research\markdown-viewer\mdview.cmd
+```
+
+The server binds to `127.0.0.1` only and can only read files under the roots
+you pass. It opens Edge or Chrome in app mode (no browser chrome) if either is
+installed; pass `--browser` for a normal tab, `--no-open` to just serve.
+Default port is 8765, and the next free port is used if that one is taken.
+
+Run `python vendor.py` once to download the rendering libraries into
+`static/vendor` so everything works offline. Until then the UI falls back to
+the CDN.
+
+## Using it
+
+- **Sidebar**: a lazy-loaded tree of every folder, showing only `.md` files
+  (tick *show non-.md text files* to include `.txt`, `.json`, `.py` and so on).
+  Above it, **Recently modified** lists the newest Markdown files across all
+  roots, so whatever an LLM just wrote is one click away.
+- **Click** a file to preview it in an italic tab that the next click reuses.
+  **Double-click**, or press Alt+Enter, to keep it open. Ctrl+click or
+  middle-click opens it to the side in a split pane.
+- **Tabs** drag to reorder or to move between panes. Middle-click closes.
+  Right-click for close others / close to the right / move to the side.
+- **Windows**: the ⧉ button (or right-click → Open in new window) pops the
+  file out into its own window that stays live.
+- **Live reload**: open files are re-read within a second of changing on disk,
+  keeping your scroll position. With *follow* ticked in the status bar, a file
+  you have scrolled to the end of keeps auto-scrolling as it grows, which is
+  what you want while an LLM is still writing it.
+- **Outline** on the right tracks the current heading; click to jump.
+- **Rendering**: GitHub-flavoured Markdown, code highlighting with a copy
+  button, `$…$` / `$$…$$` math via KaTeX, ```mermaid diagrams, task lists,
+  tables, footnote-free front matter, and `> [!NOTE]` style alerts. Relative
+  links to other Markdown files open in the viewer; relative images work.
+- **Settings** (⚙): theme, font size, serif or sans, content width, line
+  height. Everything, including open tabs and scroll positions, persists in
+  the browser per set of roots.
+
+## Shortcuts
+
+| Keys | Action |
+| --- | --- |
+| Ctrl+P | Quick open: fuzzy search every Markdown file |
+| Ctrl+B | Toggle sidebar |
+| Ctrl+Shift+O | Toggle outline |
+| Ctrl+\ | Open the current file to the side |
+| Alt+W | Close tab |
+| Alt+[ / Alt+] | Previous / next tab |
+| Alt+1 … Alt+9 | Jump to tab |
+| Alt+Enter | Keep preview tab open |
+| Alt+R | Toggle raw source |
+| Esc | Close popups |
+
+## Files
+
+- `server.py` — the whole backend (stdlib only)
+- `static/index.html`, `static/app.js`, `static/style.css` — the UI
+- `static/vendor/` — marked, DOMPurify, highlight.js, KaTeX, mermaid (via `vendor.py`)
+- `samples/demo.md` — a test document that exercises every feature

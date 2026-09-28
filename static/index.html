@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>mdview</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23388bfd'/%3E%3Cpath d='M3 12V4h2l2 3 2-3h2v8H9V7.5L7 10 5 7.5V12z' fill='white'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+<script>
+// Load vendored libraries, falling back to the CDN for any that are missing.
+(function () {
+  var JSD = 'https://cdn.jsdelivr.net/npm/';
+  var CSS = [
+    ['vendor/katex.min.css', JSD + 'katex@0.16/dist/katex.min.css', 'katex-css'],
+    ['vendor/hljs-github.min.css', JSD + '@highlightjs/cdn-assets@11/styles/github.min.css', 'hljs-light'],
+    ['vendor/hljs-github-dark.min.css', JSD + '@highlightjs/cdn-assets@11/styles/github-dark.min.css', 'hljs-dark'],
+  ];
+  var JS = [
+    ['vendor/marked.min.js', JSD + 'marked@15/marked.min.js'],
+    ['vendor/purify.min.js', JSD + 'dompurify@3/dist/purify.min.js'],
+    ['vendor/highlight.min.js', JSD + '@highlightjs/cdn-assets@11/highlight.min.js'],
+    ['vendor/katex.min.js', JSD + 'katex@0.16/dist/katex.min.js'],
+    ['vendor/mermaid.min.js', JSD + 'mermaid@11/dist/mermaid.min.js'],
+  ];
+  CSS.forEach(function (c) {
+    var l = document.createElement('link');
+    l.rel = 'stylesheet'; l.href = c[0]; l.id = c[2];
+    l.onerror = function () { l.onerror = null; l.href = c[1]; };
+    document.head.appendChild(l);
+  });
+  function load(i) {
+    if (i >= JS.length) { window.__libsReady = true; window.dispatchEvent(new Event('libs-ready')); return; }
+    var s = document.createElement('script');
+    s.src = JS[i][0];
+    s.onload = function () { load(i + 1); };
+    s.onerror = function () {
+      var t = document.createElement('script');
+      t.src = JS[i][1];
+      t.onload = function () { load(i + 1); };
+      t.onerror = function () { console.error('failed to load', JS[i]); load(i + 1); };
+      document.head.appendChild(t);
+    };
+    document.head.appendChild(s);
+  }
+  load(0);
+})();
+</script>
+</head>
+<body>
+<div id="app">
+  <aside id="sidebar">
+    <div class="sidebar-head">
+      <input id="filter" type="search" placeholder="Search files…  (Ctrl+P)" autocomplete="off" spellcheck="false">
+    </div>
+    <div id="sidebar-scroll">
+      <section id="recent-section">
+        <div class="section-head" data-toggle="recent-list"><span class="chev open"></span>Recently modified</div>
+        <div id="recent-list"></div>
+      </section>
+      <section id="tree-section">
+        <div class="section-head" data-toggle="tree"><span class="chev open"></span>Folders</div>
+        <div id="tree"></div>
+      </section>
+      <div id="search-results" hidden></div>
+    </div>
+    <div class="sidebar-foot">
+      <label class="check"><input type="checkbox" id="show-all"> show non-.md text files</label>
+    </div>
+  </aside>
+  <div id="sidebar-resizer" title="Drag to resize"></div>
+
+  <div id="main">
+    <div id="toolbar">
+      <button class="tb" id="tb-sidebar" title="Toggle sidebar (Ctrl+B)">☰</button>
+      <div id="crumbs"></div>
+      <div class="tb-spacer"></div>
+      <span id="live-dot" title="Live reload active"></span>
+      <button class="tb" id="tb-raw" title="Toggle raw source (Alt+R)">&lt;/&gt;</button>
+      <button class="tb" id="tb-split" title="Split to the side (Ctrl+\)">⫿</button>
+      <button class="tb" id="tb-popout" title="Open in new window">⧉</button>
+      <button class="tb" id="tb-outline" title="Toggle outline (Ctrl+Shift+O)">≡</button>
+      <button class="tb" id="tb-theme" title="Toggle theme">◐</button>
+      <button class="tb" id="tb-settings" title="Settings">⚙</button>
+    </div>
+    <div id="groups"></div>
+    <div id="statusbar">
+      <span id="status-path"></span>
+      <span class="status-spacer"></span>
+      <span id="status-info"></span>
+      <label class="status-toggle" title="Auto-scroll to the bottom when a file you are at the end of grows (great for LLM output)"><input type="checkbox" id="follow"> follow</label>
+    </div>
+  </div>
+
+  <aside id="outline">
+    <div class="outline-head">Outline</div>
+    <div id="outline-list"></div>
+  </aside>
+</div>
+
+<div id="quickopen" hidden>
+  <div class="qo-box">
+    <input id="qo-input" type="text" placeholder="Type to search all Markdown files…  Enter: open · Ctrl+Enter: open to the side" autocomplete="off" spellcheck="false">
+    <div id="qo-list"></div>
+  </div>
+</div>
+
+<div id="settings-panel" hidden>
+  <div class="settings-row"><span>Theme</span>
+    <div class="seg" data-setting="theme">
+      <button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button>
+    </div>
+  </div>
+  <div class="settings-row"><span>Font size</span>
+    <div class="seg"><button id="font-dec">−</button><span id="font-val"></span><button id="font-inc">+</button></div>
+  </div>
+  <div class="settings-row"><span>Content width</span>
+    <div class="seg" data-setting="width">
+      <button data-v="narrow">Narrow</button><button data-v="normal">Normal</button><button data-v="wide">Wide</button><button data-v="full">Full</button>
+    </div>
+  </div>
+  <div class="settings-row"><span>Line height</span>
+    <div class="seg" data-setting="lineHeight">
+      <button data-v="1.45">Tight</button><button data-v="1.6">Normal</button><button data-v="1.8">Loose</button>
+    </div>
+  </div>
+  <div class="settings-row"><span>Fonts</span>
+    <div class="seg" data-setting="font">
+      <button data-v="sans">Sans</button><button data-v="serif">Serif</button>
+    </div>
+  </div>
+  <div class="settings-help">
+    <b>Shortcuts</b><br>
+    Ctrl+P quick open · Ctrl+B sidebar · Ctrl+Shift+O outline<br>
+    Alt+W close tab · Alt+[ / Alt+] switch tab · Alt+1…9 jump to tab<br>
+    Alt+Enter keep preview tab open · Ctrl+\ split · Alt+R raw<br>
+    Click a file to preview, double-click to keep it open.<br>
+    Ctrl+click or middle-click a file to open it to the side.
+  </div>
+</div>
+
+<div id="ctxmenu" hidden></div>
+<div id="toast" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

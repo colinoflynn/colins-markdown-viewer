@@ -1,0 +1,4 @@
+# Downloaded rendering libraries; regenerate with: python vendor.py
+static/vendor/
+__pycache__/
+*.pyc
