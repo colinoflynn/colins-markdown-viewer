@@ -69,7 +69,7 @@ const api = {
 
 /* ============================================================ state */
 const DEFAULTS = {
-  theme: 'system', fontSize: 16, width: 'normal', lineHeight: '1.6', font: 'sans',
+  theme: 'system', lightTheme: 'light', darkTheme: 'dark', fontSize: 16, width: 'normal', lineHeight: '1.6', font: 'sans',
   sidebar: true, outline: true, sidebarWidth: 280, follow: true, showAll: false,
   recentOpen: true, treeOpen: true, tableView: 'auto',
 };
@@ -1213,12 +1213,16 @@ function popOut(path) {
 
 /* ============================================================ settings / theme */
 const mql = matchMedia('(prefers-color-scheme: dark)');
+const DARK_THEMES = ['dark', 'dim'], LIGHT_THEMES = ['light', 'paper'];
 function applyTheme() {
-  const dark = settings.theme === 'dark' || (settings.theme === 'system' && mql.matches);
-  const theme = dark ? 'dark' : 'light';
-  document.documentElement.dataset.theme = theme;
+  // settings.theme is 'system' or a concrete theme; lightTheme/darkTheme remember
+  // which variant of each family to use when following the OS or toggling.
+  const chosen = settings.theme === 'system' ? (mql.matches ? settings.darkTheme : settings.lightTheme) : settings.theme;
+  const dark = DARK_THEMES.includes(chosen);
+  document.documentElement.dataset.theme = chosen;
   const l = $('#hljs-light'), d = $('#hljs-dark');
   if (l) l.disabled = dark; if (d) d.disabled = !dark;
+  const theme = dark ? 'dark' : 'light';  // state.theme tracks the family, which is all mermaid/hljs care about
   if (theme !== state.theme) {
     state.theme = theme;
     if (window.mermaid) {
@@ -1251,7 +1255,12 @@ function applySettings() {
   const t = activeTab(); if (t) updateOutlineCurrent(t);
 }
 for (const seg of $$('.seg[data-setting]')) for (const b of $$('button', seg)) b.addEventListener('click', () => {
-  settings[seg.dataset.setting] = b.dataset.v; applySettings();
+  settings[seg.dataset.setting] = b.dataset.v;
+  if (seg.dataset.setting === 'theme') {
+    if (LIGHT_THEMES.includes(b.dataset.v)) settings.lightTheme = b.dataset.v;
+    if (DARK_THEMES.includes(b.dataset.v)) settings.darkTheme = b.dataset.v;
+  }
+  applySettings();
   if (seg.dataset.setting === 'tableView') rerenderAll();
 });
 function rerenderAll() { for (const t of allTabs()) { t.renderedKey = null; renderTab(t); } }
@@ -1264,7 +1273,7 @@ for (const h of $$('.section-head[data-toggle]')) h.addEventListener('click', ()
 /* ---- toolbar */
 $('#tb-sidebar').addEventListener('click', () => { settings.sidebar = !settings.sidebar; applySettings(); });
 $('#tb-outline').addEventListener('click', () => { settings.outline = !settings.outline; applySettings(); updateOutline(); });
-$('#tb-theme').addEventListener('click', () => { settings.theme = state.theme === 'dark' ? 'light' : 'dark'; applySettings(); });
+$('#tb-theme').addEventListener('click', () => { settings.theme = state.theme === 'dark' ? settings.lightTheme : settings.darkTheme; applySettings(); });
 $('#tb-settings').addEventListener('click', () => { const p = $('#settings-panel'); p.hidden = !p.hidden; });
 $('#tb-raw').addEventListener('click', () => toggleRaw(activeTab()));
 $('#tb-popout').addEventListener('click', () => { const t = activeTab(); if (t) popOut(t.path); });

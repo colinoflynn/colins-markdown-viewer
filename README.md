@@ -60,8 +60,9 @@ the CDN.
   their header, are re-attached automatically, and a stray unescaped `|` in a
   cell's prose is folded back into the cell instead of silently eating the
   columns after it.
-- **Settings** (⚙): theme, font size, serif or sans, content width, line
-  height, default table view. Everything, including open tabs and scroll positions, persists in
+- **Settings** (⚙): theme (Light, Paper, Dark, Dim, or follow the OS; *System*
+  and the ◐ toggle use whichever light and dark variants you picked last), font
+  size, serif or sans, content width, line height, default table view. Everything, including open tabs and scroll positions, persists in
   the browser per set of roots.
 
 ## Shortcuts
