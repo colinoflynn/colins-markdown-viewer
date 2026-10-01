@@ -355,7 +355,7 @@ function enhanceTables(art, docPath) {
 
     const wrap = el('div', { class: 'tbl' + (prose ? ' prose' : '') });
     const scroll = el('div', { class: 'tbl-scroll' });
-    table.replaceWith(wrap);
+    table.replaceWith(el('div', { class: 'tbl-out' }, wrap));
     scroll.append(table);
     if (rows.length < 2 && !prose) { wrap.append(scroll); return; }
     const cardsEl = el('div', { class: 'tbl-cards', hidden: true });
@@ -546,6 +546,8 @@ function createTab(g, path, pinned) {
   t.inner = el('div', { class: 'pane-inner w-' + settings.width });
   t.pane = el('div', { class: 'pane', tabindex: '0', hidden: true }, t.inner);
   t.pane.addEventListener('scroll', () => onPaneScroll(t), { passive: true });
+  // the pane's usable width (minus scrollbar) for tables that break out of the column
+  new ResizeObserver(() => { t.pane.style.setProperty('--pane-w', t.pane.clientWidth + 'px'); updateProgress(t); }).observe(t.pane);
   t.pane.addEventListener('click', e => onContentClick(e, t));
   g.panesEl.append(t.pane);
   return t;

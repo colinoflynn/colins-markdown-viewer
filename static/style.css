@@ -198,6 +198,11 @@ mark.fz { background: none; color: var(--accent); font-weight: 700; }
 .tb:hover { background: var(--bg-3); color: var(--fg); }
 .tb.on { color: var(--accent); background: var(--accent-bg); }
 .tb-spacer { flex: 1; }
+.tb-seg { margin: 0 6px; }
+.tb-seg button { padding: 3px 8px; font-size: 11px; color: var(--fg-2); }
+.tb-seg button.on { color: var(--accent); }
+#main { container-type: inline-size; }
+@container (max-width: 640px) { .tb-seg { display: none; } }
 #crumbs { display: flex; align-items: center; gap: 2px; margin-left: 6px; overflow: hidden; white-space: nowrap; color: var(--fg-2); font-size: 12px; }
 #crumbs span { cursor: pointer; padding: 2px 3px; border-radius: 4px; }
 #crumbs span:hover { background: var(--bg-3); color: var(--fg); }
@@ -254,15 +259,19 @@ mark.fz { background: none; color: var(--accent); font-weight: 700; }
 .pane[hidden] { display: none; }
 .pane.drop-target::after { content: ""; position: absolute; inset: 0; background: var(--accent-bg); opacity: .5; pointer-events: none; }
 .pane-inner {
-  /* The measure scales with the body font: 34em is roughly 65-75 characters
-     per line for prose, the range reading research supports. The 80px is the
-     horizontal padding (box-sizing is border-box). */
-  max-width: calc(var(--font-size) * 34 + 80px); margin: 0 auto;
+  /* --measure is the reading column's width. It scales with the body font:
+     34em is roughly 65-75 characters per line for prose, the range reading
+     research supports. The 80px is the horizontal padding (border-box).
+     --sec-gap is the space above a section heading; it grows slightly with
+     the measure so wider columns get a little more air between sections. */
+  --measure: calc(var(--font-size) * 34);
+  --sec-gap: clamp(calc(var(--font-size) * 1.5), calc(var(--font-size) + var(--measure) * .035), calc(var(--font-size) * 2.6));
+  max-width: calc(var(--measure) + 80px); margin: 0 auto;
   padding: 28px 40px 50vh;
 }
-.pane-inner.w-narrow { max-width: calc(var(--font-size) * 28 + 80px); }
-.pane-inner.w-wide { max-width: calc(var(--font-size) * 52 + 80px); }
-.pane-inner.w-full { max-width: none; }
+.pane-inner.w-narrow { --measure: calc(var(--font-size) * 28); }
+.pane-inner.w-wide { --measure: calc(var(--font-size) * 52); }
+.pane-inner.w-full { --measure: calc(var(--pane-w, 100cqw) - 80px); max-width: none; }
 .progress { position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 3; pointer-events: none; }
 .progress-fill { height: 100%; width: 0; background: var(--accent); opacity: .75; transition: width .08s linear; }
 .pane-empty {
@@ -386,7 +395,7 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
   font-family: var(--font-ui); font-size: 13px; color: var(--fg-2); user-select: none;
 }
 .sec-nav.top { margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border-2); }
-.sec-nav.bottom { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--border); }
+.sec-nav.bottom { margin-top: calc(var(--sec-gap) * 1.2); padding-top: 14px; border-top: 1px solid var(--border); }
 .sec-nav button {
   background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px;
   cursor: pointer; color: var(--fg); font: inherit; max-width: 42%;
@@ -396,10 +405,10 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
 .sec-nav button:disabled { opacity: .35; cursor: default; }
 .sec-nav .sec-pos { font-variant-numeric: tabular-nums; flex: none; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
-  margin-top: 1.5em; margin-bottom: .6em; font-weight: 600; line-height: 1.25; scroll-margin-top: 12px;
+  margin-top: calc(var(--sec-gap) * .8); margin-bottom: .6em; font-weight: 600; line-height: 1.25; scroll-margin-top: 12px;
 }
-.markdown-body h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--border-2); }
-.markdown-body h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border-2); }
+.markdown-body h1 { font-size: 2em; padding-bottom: .3em; border-bottom: 1px solid var(--border-2); margin-top: calc(var(--sec-gap) * 1.35); }
+.markdown-body h2 { font-size: 1.5em; padding-bottom: .3em; border-bottom: 1px solid var(--border-2); margin-top: var(--sec-gap); }
 .markdown-body h3 { font-size: 1.25em; }
 .markdown-body h4 { font-size: 1.05em; }
 .markdown-body h5 { font-size: .95em; }
@@ -433,7 +442,16 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
 .markdown-body th.sortable { cursor: pointer; user-select: none; }
 .markdown-body th.sortable:hover { color: var(--accent); }
 .markdown-body th .sort-ind { margin-left: 4px; font-size: .75em; color: var(--accent); }
-.tbl { margin-bottom: 1em; }
+/* A table sits in a full-pane-width strip centred on the column. It takes its
+   natural width: at least the column, at most the pane, so a wide table grows
+   past the reading column instead of scrolling inside it. Prose tables stop at
+   1.5x the column so their cell text keeps a readable line length; Wide lifts
+   that cap. */
+/* --pane-w is set per pane from its clientWidth (so it excludes the scrollbar, which 100cqw does not) */
+.tbl-out { width: calc(var(--pane-w, 100cqw) - 48px); margin-left: calc(50% - var(--pane-w, 100cqw) / 2 + 24px); display: flex; justify-content: center; margin-bottom: 1em; }
+.tbl { width: max-content; min-width: min(100%, var(--measure)); max-width: 100%; }
+.tbl.prose { width: 100%; max-width: min(100%, calc(var(--measure) * 1.5)); }
+.tbl.wide { width: 100%; max-width: 100%; }
 .tbl-scroll { overflow: auto; max-width: 100%; }
 .tbl.prose .tbl-scroll { overflow: visible; }
 .tbl.prose table { width: 100%; }
@@ -453,9 +471,7 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
 .tbl-filter { width: 150px; padding: 2px 7px; font: inherit; font-size: 11.5px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--fg); outline: none; }
 .tbl-filter:focus { border-color: var(--accent); }
 .tbl-count { font-variant-numeric: tabular-nums; }
-/* wide: break out of the reading column to the pane's edges */
 .pane { container-type: inline-size; }
-.tbl.wide { width: calc(100cqw - 48px); margin-left: calc(50% - 50cqw + 24px); }
 /* collapse: clamp long cells; click a row to expand it */
 .tbl.clamp .cell, .tbl.clamp .tcard-body, .tbl.clamp .trow-v { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .tbl.clamp .expanded .cell, .tbl.clamp .expanded .tcard-body, .tbl.clamp .expanded .trow-v { display: block; -webkit-line-clamp: unset; overflow: visible; }
@@ -537,5 +553,6 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
   .pane[hidden] { display: none; }
   .pane-inner { max-width: none; padding: 0; }
   .progress, .sec-nav { display: none !important; }
+  .tbl-out { width: auto; margin-left: 0; display: block; }
   .doc-section[hidden] { display: block; }
 }

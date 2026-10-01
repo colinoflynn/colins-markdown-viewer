@@ -52,8 +52,9 @@ the CDN.
   to the top while you scroll; *Cards* turns each row into a card with the
   short columns as a meta line; *Rows* shows label / value pairs per row;
   *Collapse* trims long cells to three lines so you can scan the bold leads
-  and click a row to expand it; *Wide* breaks the table out to the full pane
-  width. Click a header to sort, type in the filter box to keep only matching
+  and click a row to expand it. Tables are not held to the reading column:
+  one that needs more room grows past it, centred, up to the edges of the
+  pane, and *Wide* forces the full pane width. Click a header to sort, type in the filter box to keep only matching
   rows. Choices persist per table. The *Long-text tables* setting picks the
   default view (Auto uses Cards for prose-heavy tables, Table otherwise).
   Rows that an LLM separated from their table with a blank line, and so lost
@@ -70,9 +71,10 @@ the CDN.
 - **Settings** (⚙): theme (Light, Paper, Dark, Dim, or follow the OS; *System*
   and the ◐ toggle use whichever light and dark variants you picked last), font
   size, serif or sans, content width, line height, scroll or section reading,
-  default table view. Content widths scale with the font size: *Normal* is
-  about 70 characters per line, the measure reading research favours; *Wide*
-  is roughly the old default, and *Full* uses the whole pane. Everything, including open tabs and scroll positions, persists in
+  default table view. Content width is also in the toolbar. Widths scale with
+  the font size: *Normal* is about 70 characters per line, the measure reading
+  research favours; *Wide* is roughly the old default, and *Full* uses the
+  whole pane. Space above headings grows a little with the width. Everything, including open tabs and scroll positions, persists in
   the browser per set of roots.
 
 ## Shortcuts
