@@ -1,18 +1,18 @@
-# cmdv
+# cmdv: Colin's Markdown Viewer
 
-Colin's Markdown Viewer: a fast local Markdown viewer for reading LLM output. One Python file serves a
-browser UI; no packages to install.
+Colin's Markdown Viewer: a fast local Markdown viewer for reading lots of markdown files
+(often an output of LLMs). One Python file serves a browser UI; no packages to install.
 
 ## Run
 
 ```bash
-python cmdv.py D:\some\folder D:\another\folder
+python cmdv.py C:\some\folder C:\another\folder
 ```
 
 or, from the folder you want to browse:
 
 ```bash
-D:\Dropbox\academic\claude_research\markdown-viewer\cmdv.cmd
+~\checkout_location\cmdv.cmd
 ```
 
 The server binds to `127.0.0.1` only and can only read, and in edit mode
@@ -110,3 +110,10 @@ the CDN.
 - `static/index.html`, `static/app.js`, `static/style.css` — the UI
 - `static/vendor/` — marked, DOMPurify, highlight.js, KaTeX, mermaid (via `vendor.py`)
 - `samples/demo.md` — a test document that exercises every feature
+
+## License
+
+CC0 1.0 Universal: this project is dedicated to the public domain, see
+`LICENSE`. The rendering libraries that `vendor.py` downloads into
+`static/vendor/` (marked, DOMPurify, highlight.js, KaTeX, mermaid) keep their
+own licenses.
