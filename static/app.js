@@ -69,7 +69,7 @@ const api = {
 
 /* ============================================================ state */
 const DEFAULTS = {
-  theme: 'system', lightTheme: 'light', darkTheme: 'dark', fontSize: 16, width: 'normal', lineHeight: '1.6', font: 'sans',
+  theme: 'system', lightTheme: 'light', darkTheme: 'dark', fontSize: 16, width: 'normal', lineHeight: '1.6', font: 'sans', reading: 'scroll',
   sidebar: true, outline: true, sidebarWidth: 280, follow: true, showAll: false,
   recentOpen: true, treeOpen: true, tableView: 'auto',
 };
@@ -494,7 +494,8 @@ function createGroup() {
   g.tabsEl = el('div', { class: 'tabs' });
   g.panesEl = el('div', { class: 'panes' });
   g.emptyEl = el('div', { class: 'pane-empty' }, el('div', { class: 'big' }, '≡'), el('div', {}, 'Click a file to preview it, double-click to keep it open'), el('div', {}, 'Ctrl+P searches every Markdown file'));
-  g.panesEl.append(g.emptyEl);
+  g.progressEl = el('div', { class: 'progress-fill' });
+  g.panesEl.append(g.emptyEl, el('div', { class: 'progress' }, g.progressEl));
   g.el = el('div', { class: 'group' }, g.tabsEl, g.panesEl);
   g.el.addEventListener('mousedown', () => setActiveGroup(state.groups.indexOf(g)), true);
   g.el.addEventListener('focusin', () => setActiveGroup(state.groups.indexOf(g)));
@@ -541,7 +542,7 @@ const allTabs = () => state.groups.flatMap(g => g.tabs);
 const isActiveTab = t => activeTab() === t;
 
 function createTab(g, path, pinned) {
-  const t = { id: ++seq, path, pinned, group: g, renderedKey: null, raw: false, scrollTop: 0, atBottom: false, missing: false, headings: [] };
+  const t = { id: ++seq, path, pinned, group: g, renderedKey: null, raw: false, scrollTop: 0, atBottom: false, missing: false, headings: [], sections: null, section: 0 };
   t.inner = el('div', { class: 'pane-inner w-' + settings.width });
   t.pane = el('div', { class: 'pane', tabindex: '0', hidden: true }, t.inner);
   t.pane.addEventListener('scroll', () => onPaneScroll(t), { passive: true });
@@ -597,6 +598,7 @@ function activateTab(t) {
   renderTab(t);
   renderTabs(g);
   onActiveChanged();
+  updateProgress(t);
   t.pane.focus({ preventScroll: true });
   const te = g.tabsEl.querySelector(`[data-id="${t.id}"]`);
   te?.scrollIntoView({ inline: 'nearest', block: 'nearest' });
@@ -613,7 +615,7 @@ function closeTab(t) {
     const next = g.tabs[i] || g.tabs[i - 1];
     if (next) activateTab(next);
     else if (state.groups.length > 1) removeGroup(g);
-    else { g.emptyEl.hidden = false; renderTabs(g); onActiveChanged(); }
+    else { g.emptyEl.hidden = false; g.progressEl.style.width = '0'; renderTabs(g); onActiveChanged(); }
   } else renderTabs(g);
   persistSession();
   updateTreeMarks();
@@ -725,15 +727,123 @@ function renderTab(t) {
   const pane = t.pane, visible = !pane.hidden;
   const prevTop = visible ? pane.scrollTop : t.scrollTop;
   const wasAtBottom = visible ? isAtBottom(pane) : t.atBottom;
+  const prevSecCount = t.sections ? t.sections.length : 0;
+  const wantSections = !t.raw && settings.reading === 'sections';
+  // switching between scroll and section mode: stay on the heading being read
+  const curId = !first && visible && (prevSecCount > 0) !== wantSections ? currentHeading(t)?.id : null;
   const node = t.raw ? renderRaw(d.content) : renderMarkdown(d.content, t.path);
   t.inner.replaceChildren(node);
   if (t.missing) t.inner.prepend(missingNotice());
   t.renderedKey = key;
-  const target = (!first && settings.follow && wasAtBottom) ? Infinity : prevTop;
+  t.sections = null;
+  if (wantSections) sectionize(t, node);
+  let target = (!first && settings.follow && wasAtBottom) ? Infinity : prevTop;
+  let jump = curId ? t.inner.querySelector('#' + CSS.escape(curId)) : null;
+  if (t.sections) {
+    let i = t.section;
+    if (!first && !prevSecCount) i = 0;  // just switched in
+    if (!first && prevSecCount && target === Infinity && i >= prevSecCount - 1) i = t.sections.length - 1;  // following a growing file
+    const s = jump?.closest('.doc-section');
+    if (s) i = t.sections.indexOf(s);
+    showSection(t, i, null);
+  }
+  if (jump) target = 0;
   if (visible) applyScroll(pane, target); else t.scrollTop = target;
-  if (!t.raw) renderMermaidIn(node, () => { if (target === Infinity && !pane.hidden) applyScroll(pane, Infinity); if (isActiveTab(t)) updateOutline(); });
+  if (jump && visible) jump.scrollIntoView({ block: 'start' });
+  if (!t.raw) renderMermaidIn(node, () => { if (target === Infinity && !pane.hidden) applyScroll(pane, Infinity); if (isActiveTab(t)) updateOutline(); updateProgress(t); });
   if (isActiveTab(t)) { updateOutline(); updateStatus(); }
+  updateProgress(t);
 }
+
+/* ---- section mode: split the article at its top-level headings and show one section at a time */
+function sectionize(t, art) {
+  const isH = n => n.nodeType === 1 && /^H[1-6]$/.test(n.tagName);
+  const hs = [...art.children].filter(isH);
+  if (hs.length < 2) return;
+  const lv = hs.map(h => +h.tagName[1]);
+  let L = Math.min(...lv);
+  // a lone H1 is the document title, not a section: split one level down
+  if (lv.filter(l => l === L).length === 1 && lv.some(l => l > L)) L = Math.min(...lv.filter(l => l > L));
+  const isSplit = n => isH(n) && +n.tagName[1] <= L;
+  if (hs.filter(isSplit).length < 2) return;
+  const secs = []; let cur = null, has = false;
+  for (const n of [...art.childNodes]) {
+    if (!cur || (isSplit(n) && has)) { cur = el('section', { class: 'doc-section' }); secs.push(cur); has = false; }
+    if (isSplit(n)) { has = true; cur.secTitle = n.textContent.replace(/#$/, '').trim(); }
+    cur.append(n);
+  }
+  for (const s of secs) if (!s.secTitle) s.secTitle = (s.querySelector('h1,h2,h3,h4,h5,h6')?.textContent || 'Start').replace(/#$/, '').trim();
+  art.append(...secs);
+  t.sections = secs;
+  secs.forEach((s, i) => { s.prepend(secNav(t, i, 'top')); s.append(secNav(t, i, 'bottom')); });
+}
+function secNav(t, i, where) {
+  const n = t.sections.length;
+  const prev = el('button', { type: 'button', title: i > 0 ? t.sections[i - 1].secTitle : '' }, i > 0 ? '‹ ' + t.sections[i - 1].secTitle : '‹ Previous');
+  const next = el('button', { type: 'button', title: i < n - 1 ? t.sections[i + 1].secTitle : '' }, i < n - 1 ? t.sections[i + 1].secTitle + ' ›' : 'Next ›');
+  prev.disabled = i === 0; next.disabled = i === n - 1;
+  prev.addEventListener('click', () => showSection(t, i - 1, 0));
+  next.addEventListener('click', () => showSection(t, i + 1, 0));
+  return el('div', { class: 'sec-nav ' + where }, prev, el('span', { class: 'sec-pos' }, `${i + 1} / ${n}`), next);
+}
+// scrollTop: a number to scroll to, Infinity for the end, or null to leave the scroll position alone
+function showSection(t, i, scrollTop = 0) {
+  if (!t.sections) return;
+  i = Math.max(0, Math.min(t.sections.length - 1, i));
+  t.section = i;
+  t.sections.forEach((s, k) => { s.hidden = k !== i; });
+  if (scrollTop !== null) applyScroll(t.pane, scrollTop);
+  if (isActiveTab(t)) { updateOutline(); updateStatus(); }
+  updateProgress(t);
+  persistScroll();
+}
+function stepSection(t, dir) { if (t && t.sections) showSection(t, t.section + dir, 0); }
+
+/* ---- headings: current / previous / next */
+const visibleHeadings = t => t.headings.filter(h => h.offsetParent !== null);
+function currentHeading(t) {
+  const pr = t.pane.getBoundingClientRect();
+  let cur = null;
+  const vis = visibleHeadings(t);
+  for (const hd of vis) { if (hd.getBoundingClientRect().top - pr.top <= 24) cur = hd; else break; }
+  if (!cur && (t.sections || t.pane.scrollTop < 40)) cur = vis[0] || null;  // section heading below the top nav, or top of document
+  return cur;
+}
+// scroll an element into view, first revealing its section in section mode
+function jumpTo(t, elem, smooth = false) {
+  if (t.sections) { const i = t.sections.indexOf(elem.closest('.doc-section')); if (i >= 0 && i !== t.section) showSection(t, i, null); }
+  elem.scrollIntoView({ block: 'start', behavior: smooth ? 'smooth' : 'auto' });
+}
+function stepHeading(t, dir) {
+  if (!t || t.raw) return;
+  const pr = t.pane.getBoundingClientRect();
+  const vis = visibleHeadings(t), cur = currentHeading(t);
+  let target = null;
+  if (dir > 0) {
+    target = vis.find(h => h !== cur && h.getBoundingClientRect().top - pr.top > 24);
+    if (!target) { if (t.sections && t.section < t.sections.length - 1) showSection(t, t.section + 1, 0); else applyScroll(t.pane, Infinity); return; }
+  } else {
+    if (cur && cur.getBoundingClientRect().top - pr.top < -8) target = cur;  // scrolled past it: back to its top
+    else target = vis[vis.indexOf(cur) - 1] || null;
+    if (!target) { if (t.sections && t.section > 0 && (!cur || cur === vis[0])) showSection(t, t.section - 1, Infinity); else applyScroll(t.pane, 0); return; }
+  }
+  target.scrollIntoView({ block: 'start' });
+}
+
+/* ---- reading progress (per group, for the visible tab) */
+function updateProgress(t) {
+  const p = t.pane, g = t.group;
+  if (p.hidden || !g.progressEl) return;
+  const scrollable = p.scrollHeight > p.clientHeight + 1;
+  const max = p.scrollHeight - p.clientHeight - innerHeight * 0.5;  // .pane-inner has 50vh of bottom padding
+  const f = !scrollable ? 1 : max > 0 ? Math.max(0, Math.min(1, p.scrollTop / max)) : 1;
+  g.progressEl.style.width = scrollable ? (f * 100).toFixed(1) + '%' : '0';
+  if (isActiveTab(t)) {
+    const sec = t.sections ? `§ ${t.section + 1}/${t.sections.length} · ` : '';
+    $('#status-pos').textContent = state.docs.has(t.path) ? sec + Math.round(f * 100) + '%' : '';
+  }
+}
+addEventListener('resize', () => { for (const g of state.groups) { const t = g.tabs.find(x => x.id === g.activeId); if (t) updateProgress(t); } });
 const missingNotice = () => el('div', { class: 'pane-notice' }, 'This file no longer exists on disk. Showing the last content that was read.');
 
 function setMissing(path, missing) {
@@ -760,7 +870,7 @@ function scrollToHash(t, hash) {
   let target = null;
   try { target = t.inner.querySelector('#' + CSS.escape(hash)); } catch { /* ignore */ }
   if (!target) target = t.inner.querySelector('#' + CSS.escape(slug(hash)));
-  if (target) target.scrollIntoView({ block: 'start' });
+  if (target) jumpTo(t, target);
 }
 
 function onContentClick(e, t) {
@@ -783,6 +893,7 @@ function onContentClick(e, t) {
 const persistScroll = debounce(persistSession, 600);
 let scrollRaf = 0;
 function onPaneScroll(t) {
+  updateProgress(t);
   if (!isActiveTab(t)) return;
   if (!scrollRaf) scrollRaf = requestAnimationFrame(() => { scrollRaf = 0; updateOutlineCurrent(t); });
   persistScroll();
@@ -793,7 +904,7 @@ function persistSession() {
   if (state.standalone) return;
   store.set(sessionKey(), {
     groups: state.groups.map(g => ({
-      tabs: g.tabs.map(t => ({ path: t.path, pinned: t.pinned, raw: t.raw, scrollTop: t.pane.hidden ? (t.scrollTop === Infinity ? 0 : t.scrollTop) : t.pane.scrollTop })),
+      tabs: g.tabs.map(t => ({ path: t.path, pinned: t.pinned, raw: t.raw, section: t.section, scrollTop: t.pane.hidden ? (t.scrollTop === Infinity ? 0 : t.scrollTop) : t.pane.scrollTop })),
       active: g.tabs.findIndex(t => t.id === g.activeId),
     })),
     activeGroup: state.activeGroup,
@@ -806,7 +917,7 @@ function restoreSession(sess) {
     const g = addGroup();
     for (const st of sg.tabs) {
       const t = createTab(g, st.path, !!st.pinned);
-      t.raw = !!st.raw; t.scrollTop = st.scrollTop || 0;
+      t.raw = !!st.raw; t.scrollTop = st.scrollTop || 0; t.section = st.section || 0;
       g.tabs.push(t);
     }
     const at = g.tabs[sg.active] || g.tabs[0];
@@ -846,7 +957,7 @@ function updateCrumbs() {
 function updateStatus() {
   const t = activeTab();
   const sp = $('#status-path'), si = $('#status-info');
-  if (!t) { sp.textContent = state.roots.map(r => r.path).join('  ·  '); si.textContent = ''; return; }
+  if (!t) { sp.textContent = state.roots.map(r => r.path).join('  ·  '); si.textContent = ''; $('#status-pos').textContent = ''; return; }
   sp.textContent = t.path;
   const d = state.docs.get(t.path);
   if (!d || d.error) { si.textContent = ''; return; }
@@ -868,7 +979,7 @@ function updateOutline() {
   for (const hd of hs) {
     const text = hd.textContent.replace(/#$/, '').trim();
     const item = el('div', { class: 'ol-item', style: `--lvl: ${hd.tagName[1]}`, title: text }, text);
-    item.addEventListener('click', () => hd.scrollIntoView({ block: 'start', behavior: 'smooth' }));
+    item.addEventListener('click', () => jumpTo(t, hd, true));
     item._h = hd;
     frag.append(item);
   }
@@ -877,10 +988,9 @@ function updateOutline() {
 }
 function updateOutlineCurrent(t) {
   if (!t.headings.length || document.body.classList.contains('no-outline')) return;
-  const pr = t.pane.getBoundingClientRect();
-  let cur = null;
-  for (const hd of t.headings) { if (hd.getBoundingClientRect().top - pr.top <= 24) cur = hd; else break; }
-  if (isAtBottom(t.pane) && t.pane.scrollHeight > t.pane.clientHeight) cur = t.headings[t.headings.length - 1];
+  let cur = currentHeading(t);
+  const vis = visibleHeadings(t);
+  if (vis.length && isAtBottom(t.pane) && t.pane.scrollHeight > t.pane.clientHeight) cur = vis[vis.length - 1];
   const list = $('#outline-list');
   for (const item of list.children) {
     const on = item._h === cur;
@@ -1243,7 +1353,9 @@ function applySettings() {
   document.body.classList.toggle('no-outline', !settings.outline);
   $('#tb-sidebar').classList.toggle('on', settings.sidebar && !state.standalone);
   $('#tb-outline').classList.toggle('on', settings.outline);
+  $('#tb-sections').classList.toggle('on', settings.reading === 'sections');
   for (const inner of $$('.pane-inner')) inner.className = 'pane-inner w-' + settings.width;
+  for (const g of state.groups) { const t = g.tabs.find(x => x.id === g.activeId); if (t) updateProgress(t); }
   $('#follow').checked = settings.follow;
   $('#show-all').checked = settings.showAll;
   $('#font-val').textContent = settings.fontSize + 'px';
@@ -1261,9 +1373,9 @@ for (const seg of $$('.seg[data-setting]')) for (const b of $$('button', seg)) b
     if (DARK_THEMES.includes(b.dataset.v)) settings.darkTheme = b.dataset.v;
   }
   applySettings();
-  if (seg.dataset.setting === 'tableView') rerenderAll();
+  if (seg.dataset.setting === 'tableView' || seg.dataset.setting === 'reading') rerenderAll();
 });
-function rerenderAll() { for (const t of allTabs()) { t.renderedKey = null; renderTab(t); } }
+function rerenderAll() { for (const t of allTabs()) { if (t.renderedKey !== null) t.renderedKey = 'stale'; renderTab(t); } }
 $('#font-dec').addEventListener('click', () => { settings.fontSize = Math.max(10, settings.fontSize - 1); applySettings(); });
 $('#font-inc').addEventListener('click', () => { settings.fontSize = Math.min(32, settings.fontSize + 1); applySettings(); });
 $('#follow').addEventListener('change', e => { settings.follow = e.target.checked; saveSettings(); });
@@ -1275,6 +1387,8 @@ $('#tb-sidebar').addEventListener('click', () => { settings.sidebar = !settings.
 $('#tb-outline').addEventListener('click', () => { settings.outline = !settings.outline; applySettings(); updateOutline(); });
 $('#tb-theme').addEventListener('click', () => { settings.theme = state.theme === 'dark' ? settings.lightTheme : settings.darkTheme; applySettings(); });
 $('#tb-settings').addEventListener('click', () => { const p = $('#settings-panel'); p.hidden = !p.hidden; });
+function toggleSections() { settings.reading = settings.reading === 'sections' ? 'scroll' : 'sections'; applySettings(); rerenderAll(); }
+$('#tb-sections').addEventListener('click', toggleSections);
 $('#tb-raw').addEventListener('click', () => toggleRaw(activeTab()));
 $('#tb-popout').addEventListener('click', () => { const t = activeTab(); if (t) popOut(t.path); });
 $('#tb-split').addEventListener('click', splitActive);
@@ -1311,6 +1425,9 @@ document.addEventListener('keydown', e => {
     const g = activeGroup(), t = activeTab();
     if (e.code === 'KeyW') { e.preventDefault(); if (t) closeTab(t); }
     else if (e.code === 'KeyR') { e.preventDefault(); toggleRaw(t); }
+    else if (e.code === 'KeyS') { e.preventDefault(); toggleSections(); }
+    else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') { e.preventDefault(); stepHeading(t, e.code === 'ArrowDown' ? 1 : -1); }
+    else if (e.code === 'PageUp' || e.code === 'PageDown') { e.preventDefault(); stepSection(t, e.code === 'PageDown' ? 1 : -1); }
     else if (e.code === 'Enter') { e.preventDefault(); if (t) { t.pinned = true; renderTabs(g); persistSession(); } }
     else if (e.code === 'BracketLeft' || e.code === 'BracketRight') {
       e.preventDefault();

@@ -254,12 +254,17 @@ mark.fz { background: none; color: var(--accent); font-weight: 700; }
 .pane[hidden] { display: none; }
 .pane.drop-target::after { content: ""; position: absolute; inset: 0; background: var(--accent-bg); opacity: .5; pointer-events: none; }
 .pane-inner {
-  max-width: var(--content-w); margin: 0 auto;
+  /* The measure scales with the body font: 34em is roughly 65-75 characters
+     per line for prose, the range reading research supports. The 80px is the
+     horizontal padding (box-sizing is border-box). */
+  max-width: calc(var(--font-size) * 34 + 80px); margin: 0 auto;
   padding: 28px 40px 50vh;
 }
-.pane-inner.w-narrow { max-width: 680px; }
-.pane-inner.w-wide { max-width: 1200px; }
+.pane-inner.w-narrow { max-width: calc(var(--font-size) * 28 + 80px); }
+.pane-inner.w-wide { max-width: calc(var(--font-size) * 52 + 80px); }
 .pane-inner.w-full { max-width: none; }
+.progress { position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 3; pointer-events: none; }
+.progress-fill { height: 100%; width: 0; background: var(--accent); opacity: .75; transition: width .08s linear; }
 .pane-empty {
   height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;
   color: var(--fg-3); gap: 8px;
@@ -288,6 +293,8 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
 #status-path { overflow: hidden; text-overflow: ellipsis; cursor: pointer; }
 #status-path:hover { color: var(--fg); }
 .status-spacer { flex: 1; }
+#status-pos { font-variant-numeric: tabular-nums; min-width: 3ch; text-align: right; }
+#status-pos:empty { display: none; }
 .status-toggle { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .status-toggle input { margin: 0; }
 
@@ -372,6 +379,22 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
   word-wrap: break-word;
 }
 .markdown-body > :first-child { margin-top: 0 !important; }
+/* section mode: one top-level section at a time */
+.doc-section[hidden] { display: none; }
+.sec-nav {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  font-family: var(--font-ui); font-size: 13px; color: var(--fg-2); user-select: none;
+}
+.sec-nav.top { margin-bottom: 18px; padding-bottom: 10px; border-bottom: 1px solid var(--border-2); }
+.sec-nav.bottom { margin-top: 40px; padding-top: 14px; border-top: 1px solid var(--border); }
+.sec-nav button {
+  background: none; border: 1px solid var(--border); border-radius: 6px; padding: 5px 12px;
+  cursor: pointer; color: var(--fg); font: inherit; max-width: 42%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sec-nav button:hover:not(:disabled) { background: var(--bg-3); }
+.sec-nav button:disabled { opacity: .35; cursor: default; }
+.sec-nav .sec-pos { font-variant-numeric: tabular-nums; flex: none; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3, .markdown-body h4, .markdown-body h5, .markdown-body h6 {
   margin-top: 1.5em; margin-bottom: .6em; font-weight: 600; line-height: 1.25; scroll-margin-top: 12px;
 }
@@ -513,4 +536,6 @@ pre.raw-source .ln { display: inline-block; width: 4ch; margin-right: 1.5ch; tex
   .pane { position: static; overflow: visible; }
   .pane[hidden] { display: none; }
   .pane-inner { max-width: none; padding: 0; }
+  .progress, .sec-nav { display: none !important; }
+  .doc-section[hidden] { display: block; }
 }

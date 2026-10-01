@@ -79,6 +79,7 @@
       <button class="tb" id="tb-split" title="Split to the side (Ctrl+\)">⫿</button>
       <button class="tb" id="tb-popout" title="Open in new window">⧉</button>
       <button class="tb" id="tb-outline" title="Toggle outline (Ctrl+Shift+O)">≡</button>
+      <button class="tb" id="tb-sections" title="Section mode: one section at a time (Alt+S)">§</button>
       <button class="tb" id="tb-theme" title="Toggle theme">◐</button>
       <button class="tb" id="tb-settings" title="Settings">⚙</button>
     </div>
@@ -87,6 +88,7 @@
       <span id="status-path"></span>
       <span class="status-spacer"></span>
       <span id="status-info"></span>
+      <span id="status-pos" title="Reading position"></span>
       <label class="status-toggle" title="Auto-scroll to the bottom when a file you are at the end of grows (great for LLM output)"><input type="checkbox" id="follow"> follow</label>
     </div>
   </div>
@@ -113,6 +115,11 @@
   <div class="settings-row"><span>Font size</span>
     <div class="seg"><button id="font-dec">−</button><span id="font-val"></span><button id="font-inc">+</button></div>
   </div>
+  <div class="settings-row"><span>Reading</span>
+    <div class="seg" data-setting="reading">
+      <button data-v="scroll">Scroll</button><button data-v="sections">Sections</button>
+    </div>
+  </div>
   <div class="settings-row"><span>Content width</span>
     <div class="seg" data-setting="width">
       <button data-v="narrow">Narrow</button><button data-v="normal">Normal</button><button data-v="wide">Wide</button><button data-v="full">Full</button>
@@ -138,6 +145,7 @@
     Ctrl+P quick open · Ctrl+B sidebar · Ctrl+Shift+O outline<br>
     Alt+W close tab · Alt+[ / Alt+] switch tab · Alt+1…9 jump to tab<br>
     Alt+Enter keep preview tab open · Ctrl+\ split · Alt+R raw<br>
+    Alt+↑ / Alt+↓ previous / next heading · Alt+PgUp / Alt+PgDn previous / next section · Alt+S section mode<br>
     Click a file to preview, double-click to keep it open.<br>
     Ctrl+click or middle-click a file to open it to the side.
   </div>

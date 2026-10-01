@@ -60,9 +60,19 @@ the CDN.
   their header, are re-attached automatically, and a stray unescaped `|` in a
   cell's prose is folded back into the cell instead of silently eating the
   columns after it.
+- **Section mode** (§, Alt+S): shows one top-level section at a time with
+  previous / next controls, so a long document reads like pages that break at
+  the author's headings rather than at arbitrary screen heights. The outline
+  still lists every heading and clicking one switches section. Alt+↑ / Alt+↓
+  step through headings in either mode.
+- **Reading position**: a thin progress bar across the top of each pane and a
+  percentage in the status bar.
 - **Settings** (⚙): theme (Light, Paper, Dark, Dim, or follow the OS; *System*
   and the ◐ toggle use whichever light and dark variants you picked last), font
-  size, serif or sans, content width, line height, default table view. Everything, including open tabs and scroll positions, persists in
+  size, serif or sans, content width, line height, scroll or section reading,
+  default table view. Content widths scale with the font size: *Normal* is
+  about 70 characters per line, the measure reading research favours; *Wide*
+  is roughly the old default, and *Full* uses the whole pane. Everything, including open tabs and scroll positions, persists in
   the browser per set of roots.
 
 ## Shortcuts
@@ -78,6 +88,9 @@ the CDN.
 | Alt+1 … Alt+9 | Jump to tab |
 | Alt+Enter | Keep preview tab open |
 | Alt+R | Toggle raw source |
+| Alt+↑ / Alt+↓ | Previous / next heading |
+| Alt+PgUp / Alt+PgDn | Previous / next section (section mode) |
+| Alt+S | Toggle section mode |
 | Esc | Close popups |
 
 ## Files
