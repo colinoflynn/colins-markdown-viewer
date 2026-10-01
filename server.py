@@ -209,6 +209,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, q = self.query()
         try:
+            # POSTs have side effects (save, open, reveal): only accept them from
+            # our own origin, so a page on another site cannot drive this server.
+            origin = self.headers.get("Origin")
+            if origin and urllib.parse.urlsplit(origin).hostname not in ("127.0.0.1", "localhost", "::1"):
+                return self.error("forbidden origin", 403)
             length = int(self.headers.get("Content-Length") or 0)
             body = self.rfile.read(length) if length else b""
             try:
@@ -291,6 +296,48 @@ class Handler(BaseHTTPRequestHandler):
             raw = fh.read()
         content = raw.decode("utf-8-sig", errors="replace")
         self.send_json({"path": real, "mtime": st.st_mtime, "size": st.st_size, "content": content})
+
+    def api_save(self, q, data):
+        """Write a Markdown or text file under the roots, refusing to clobber
+        changes made since the client loaded it unless force is set."""
+        real = resolve_under_roots(data.get("path"))
+        if real is None or not os.path.isfile(real):
+            return self.error("file not found", 404)
+        if not (is_md(real) or is_text(real)):
+            return self.error("not an editable text file", 400)
+        content = data.get("content")
+        if not isinstance(content, str):
+            return self.error("content missing", 400)
+        st = os.stat(real)
+        expected = data.get("mtime")
+        if expected is not None and abs(st.st_mtime - float(expected)) > 1e-6 and not data.get("force"):
+            return self.send_json({"error": "changed on disk", "conflict": True, "mtime": st.st_mtime}, 409)
+        with open(real, "rb") as fh:
+            raw = fh.read()
+        try:
+            raw.decode("utf-8")
+        except UnicodeDecodeError:
+            return self.error("file is not valid UTF-8; edit it in another editor", 400)
+        # keep the file's own conventions: BOM and CRLF line endings
+        bom = raw.startswith(b"\xef\xbb\xbf")
+        crlf = b"\r\n" in raw
+        text = content.replace("\r\n", "\n")
+        if crlf:
+            text = text.replace("\n", "\r\n")
+        out = (b"\xef\xbb\xbf" if bom else b"") + text.encode("utf-8")
+        tmp = real + ".mdview-tmp"
+        try:
+            with open(tmp, "wb") as fh:
+                fh.write(out)
+            os.replace(tmp, real)
+        except OSError as e:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return self.error(str(e), 500)
+        st = os.stat(real)
+        self.send_json({"ok": True, "mtime": st.st_mtime, "size": st.st_size})
 
     def api_raw(self, q, data):
         real = resolve_under_roots(q.get("path"))

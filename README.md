@@ -15,8 +15,8 @@ or, from the folder you want to browse:
 D:\Dropbox\academic\claude_research\markdown-viewer\mdview.cmd
 ```
 
-The server binds to `127.0.0.1` only and can only read files under the roots
-you pass. It opens Edge or Chrome in app mode (no browser chrome) if either is
+The server binds to `127.0.0.1` only and can only read, and in edit mode
+write, files under the roots you pass. It opens Edge or Chrome in app mode (no browser chrome) if either is
 installed; pass `--browser` for a normal tab, `--no-open` to just serve.
 Default port is 8765, and the next free port is used if that one is taken.
 
@@ -68,6 +68,13 @@ the CDN.
   step through headings in either mode.
 - **Reading position**: a thin progress bar across the top of each pane and a
   percentage in the status bar.
+- **Edit mode** (✎, Alt+E): a plain textarea over the file for fixing small
+  things. Ctrl+S saves, *Done* saves and returns to reading, Esc or *Cancel*
+  discards (asking first if there are unsaved changes). The caret starts at
+  the heading you were reading. Saving keeps the file's own line endings and
+  BOM, and refuses to overwrite a file that changed on disk since you opened
+  it unless you confirm. Only Markdown and the text types the viewer lists can
+  be saved, and only under the roots you passed.
 - **Settings** (⚙): theme (Light, Paper, Dark, Dim, or follow the OS; *System*
   and the ◐ toggle use whichever light and dark variants you picked last), font
   size, serif or sans, content width, line height, scroll or section reading,
@@ -90,6 +97,7 @@ the CDN.
 | Alt+1 … Alt+9 | Jump to tab |
 | Alt+Enter | Keep preview tab open |
 | Alt+R | Toggle raw source |
+| Alt+E | Edit the file (Ctrl+S save, Esc close) |
 | Alt+↑ / Alt+↓ | Previous / next heading |
 | Alt+PgUp / Alt+PgDn | Previous / next section (section mode) |
 | Alt+S | Toggle section mode |

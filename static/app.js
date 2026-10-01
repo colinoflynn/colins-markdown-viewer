@@ -610,6 +610,7 @@ function closeTab(t) {
   const g = t.group;
   const i = g.tabs.indexOf(t);
   if (i < 0) return;
+  if (t.editing && t.editing.dirty && !confirm('Discard unsaved changes to ' + basename(t.path) + '?')) return;
   g.tabs.splice(i, 1);
   t.pane.remove();
   if (g.activeId === t.id) {
@@ -648,7 +649,7 @@ function renderTabs(g) {
   const frag = document.createDocumentFragment();
   for (const t of g.tabs) {
     const te = el('div', {
-      class: 'tab' + (t.id === g.activeId ? ' active' : '') + (t.pinned ? '' : ' preview') + (t.missing ? ' missing' : ''),
+      class: 'tab' + (t.id === g.activeId ? ' active' : '') + (t.pinned ? '' : ' preview') + (t.missing ? ' missing' : '') + (t.editing ? (t.editing.dirty ? ' editing dirty' : ' editing') : ''),
       draggable: 'true', title: t.path, dataset: { id: t.id },
     }, el('span', { class: 'tab-name' }, basename(t.path)), el('span', { class: 'tab-close', title: 'Close (Alt+W)' }, '×'));
     te.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
@@ -723,6 +724,7 @@ function renderTab(t) {
     t.renderedKey = 'err';
     return;
   }
+  if (t.editing) { editorCheckDisk(t, d); return; }
   const key = d.mtime + ':' + d.size + ':' + (t.raw ? 'raw' : 'md');
   if (t.renderedKey === key) return;
   const first = t.renderedKey === null;
@@ -860,13 +862,114 @@ function setMissing(path, missing) {
 }
 
 function toggleRaw(t) {
-  if (!t) return;
+  if (!t || t.editing) return;
   t.raw = !t.raw;
   t.pinned = true;
   renderTab(t); renderTabs(t.group);
   $('#tb-raw').classList.toggle('on', t.raw);
   persistSession();
 }
+
+/* ---- edit mode: a plain textarea over the file, saved back through the server */
+function startEdit(t) {
+  if (!t || t.editing) return;
+  const d = state.docs.get(t.path);
+  if (!d || d.error) { toast('Nothing to edit yet'); return; }
+  const heading = !t.raw && t.headings.length ? currentHeading(t) : null;
+  const ed = { base: d.content, mtime: d.mtime, dirty: false, conflict: false, scrollTop: t.pane.scrollTop };
+  const ta = el('textarea', { spellcheck: 'true', autocomplete: 'off', autocapitalize: 'off' });
+  ta.value = d.content;
+  const name = el('span', { class: 'name', title: t.path }, basename(t.path));
+  const status = el('span', { class: 'status' });
+  const save = el('button', { type: 'button', class: 'primary', title: 'Ctrl+S' }, 'Save');
+  const done = el('button', { type: 'button', title: 'Save if needed and go back to reading' }, 'Done');
+  const cancel = el('button', { type: 'button', title: 'Esc' }, 'Cancel');
+  save.addEventListener('click', () => saveEdit(t));
+  done.addEventListener('click', async () => { if (!ed.dirty || await saveEdit(t)) stopEdit(t); });
+  cancel.addEventListener('click', () => cancelEdit(t));
+  const bar = el('div', { class: 'editor-bar' }, name, status, el('span', { class: 'spacer' }), save, done, cancel);
+  ta.addEventListener('input', () => { ed.dirty = ta.value !== ed.base; editorStatus(t); });
+  ta.addEventListener('keydown', e => {
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey) {  // keep Tab in the text: two spaces, like most Markdown
+      e.preventDefault();
+      const s = ta.selectionStart, en = ta.selectionEnd;
+      ta.setRangeText('  ', s, en, 'end'); ta.dispatchEvent(new Event('input'));
+    }
+  });
+  Object.assign(ed, { ta, status });
+  t.editing = ed; t.pinned = true;
+  t.pane.classList.add('editing');
+  t.inner.replaceChildren(el('div', { class: 'editor' }, bar, ta));
+  renderTabs(t.group); updateOutline();
+  $('#tb-edit').classList.add('on');
+  editorStatus(t);
+  // put the caret on the heading that was being read
+  let pos = 0, line = 0;
+  if (heading) {
+    const want = norm(heading.textContent.replace(/#$/, ''));
+    const lines = d.content.split('\n');
+    const i = lines.findIndex(l => /^#{1,6}\s/.test(l) && norm(l.replace(/^#+\s*/, '').replace(/\s*#+\s*$/, '')) === want);
+    if (i > 0) { line = i; pos = lines.slice(0, i).join('\n').length + 1; }
+  }
+  ta.focus(); ta.setSelectionRange(pos, pos);
+  if (line) ta.scrollTop = Math.max(0, line * parseFloat(getComputedStyle(ta).lineHeight) - 40);
+  function norm(s) { return s.replace(/[`*_~\\]/g, '').replace(/\s+/g, ' ').trim().toLowerCase(); }
+}
+function editorStatus(t) {
+  const ed = t.editing; if (!ed) return;
+  ed.status.className = 'status ' + (ed.conflict ? 'conflict' : ed.dirty ? 'dirty' : '');
+  ed.status.textContent = ed.conflict ? '● changed on disk since you opened it' : ed.dirty ? '● unsaved' : 'saved';
+  renderTabs(t.group);
+}
+// the file changed on disk while editing (another tool wrote it)
+function editorCheckDisk(t, d) {
+  const ed = t.editing;
+  if (d.mtime === ed.mtime) return;
+  if (!ed.dirty) {  // nothing of ours to lose: take the new content
+    ed.base = d.content; ed.mtime = d.mtime; ed.ta.value = d.content; ed.conflict = false;
+  } else ed.conflict = true;
+  editorStatus(t);
+}
+async function saveEdit(t, force = false) {
+  const ed = t.editing; if (!ed) return false;
+  try {
+    const r = await api.post('save', { path: t.path, content: ed.ta.value, mtime: ed.mtime, force });
+    const d = state.docs.get(t.path) || { path: t.path };
+    Object.assign(d, { content: ed.ta.value, mtime: r.mtime, size: r.size, error: null });
+    state.docs.set(t.path, d);
+    ed.base = ed.ta.value; ed.mtime = r.mtime; ed.dirty = false; ed.conflict = false;
+    editorStatus(t);
+    for (const x of allTabs()) if (x !== t && samePath(x.path, t.path)) renderTab(x);
+    refreshRecent(); updateStatus();
+    toast('Saved');
+    return true;
+  } catch (e) {
+    if (/changed on disk/.test(e.message) && !force) {
+      if (confirm('The file changed on disk since you opened it. Overwrite it with your version?')) return saveEdit(t, true);
+      return false;
+    }
+    toast('Save failed: ' + e.message);
+    return false;
+  }
+}
+function cancelEdit(t) {
+  const ed = t.editing; if (!ed) return;
+  if (ed.dirty && !confirm('Discard unsaved changes to ' + basename(t.path) + '?')) return;
+  stopEdit(t);
+}
+function stopEdit(t) {
+  const ed = t.editing; if (!ed) return;
+  t.editing = null;
+  t.pane.classList.remove('editing');
+  t.renderedKey = null;
+  renderTab(t);
+  applyScroll(t.pane, ed.scrollTop);
+  renderTabs(t.group);
+  $('#tb-edit').classList.toggle('on', false);
+  t.pane.focus({ preventScroll: true });
+}
+function toggleEdit(t) { if (!t) return; if (t.editing) cancelEdit(t); else startEdit(t); }
+addEventListener('beforeunload', e => { if (allTabs().some(t => t.editing && t.editing.dirty)) { e.preventDefault(); e.returnValue = ''; } });
 
 function scrollToHash(t, hash) {
   let target = null;
@@ -934,6 +1037,7 @@ function onActiveChanged() {
   const t = activeTab();
   document.title = t ? basename(t.path) + ' – mdview' : 'mdview';
   $('#tb-raw').classList.toggle('on', !!(t && t.raw));
+  $('#tb-edit').classList.toggle('on', !!(t && t.editing));
   updateCrumbs(); updateOutline(); updateStatus(); updateTreeMarks();
   if (t) revealInTree(t.path, false);
   persistSession();
@@ -1283,6 +1387,7 @@ window.addEventListener('blur', hideMenu);
 function fileActions(path) {
   return [
     { label: 'Copy path', action: () => copyText(path) },
+    { label: 'Edit', action: () => { const t = openFile(path, { pinned: true }); ensureDoc(path).then(() => startEdit(t)); } },
     { label: 'Reveal in file manager', action: () => api.post('reveal', { path }).catch(e => toast(e.message)) },
     { label: 'Open in default editor', action: () => api.post('open', { path }).catch(e => toast(e.message)) },
   ];
@@ -1314,6 +1419,7 @@ function showTabMenu(e, t) {
     { label: 'Move to the side', kbd: 'Ctrl+\\', action: () => { const gi = state.groups.indexOf(g); const g2 = state.groups[gi + 1] || addGroup(); moveTab(t, g2, g2.tabs.length); } },
     { label: 'Open in new window', action: () => popOut(t.path) },
     { label: t.raw ? 'Rendered view' : 'Raw source', kbd: 'Alt+R', action: () => toggleRaw(t) },
+    { label: t.editing ? 'Stop editing' : 'Edit', kbd: 'Alt+E', action: () => toggleEdit(t) },
     '-', ...fileActions(t.path),
   ]);
 }
@@ -1392,6 +1498,7 @@ $('#tb-settings').addEventListener('click', () => { const p = $('#settings-panel
 function toggleSections() { settings.reading = settings.reading === 'sections' ? 'scroll' : 'sections'; applySettings(); rerenderAll(); }
 $('#tb-sections').addEventListener('click', toggleSections);
 $('#tb-raw').addEventListener('click', () => toggleRaw(activeTab()));
+$('#tb-edit').addEventListener('click', () => toggleEdit(activeTab()));
 $('#tb-popout').addEventListener('click', () => { const t = activeTab(); if (t) popOut(t.path); });
 $('#tb-split').addEventListener('click', splitActive);
 $('#status-path').addEventListener('click', () => { const t = activeTab(); if (t) revealInTree(t.path, true); });
@@ -1417,8 +1524,15 @@ function splitActive() {
 document.addEventListener('keydown', e => {
   const inInput = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
   const ctrl = e.ctrlKey || e.metaKey;
-  if (e.key === 'Escape') { if (!qo.hidden) closeQuick(); hideMenu(); $('#settings-panel').hidden = true; return; }
+  const et = activeTab();
+  if (e.key === 'Escape') {
+    if (!qo.hidden) closeQuick(); hideMenu(); $('#settings-panel').hidden = true;
+    if (et && et.editing && e.target === et.editing.ta) cancelEdit(et);
+    return;
+  }
   if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); openQuick(); return; }
+  if (ctrl && !e.shiftKey && e.key.toLowerCase() === 's') { if (et && et.editing) { e.preventDefault(); saveEdit(et); } return; }
+  if (e.altKey && !ctrl && e.code === 'KeyE') { e.preventDefault(); toggleEdit(et); return; }
   if (inInput) return;
   if (ctrl && e.key.toLowerCase() === 'b') { e.preventDefault(); settings.sidebar = !settings.sidebar; applySettings(); return; }
   if (ctrl && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); settings.outline = !settings.outline; applySettings(); updateOutline(); return; }
