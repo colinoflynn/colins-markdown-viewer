@@ -1,18 +1,18 @@
-# mdview
+# cmdv
 
-A fast local Markdown viewer for reading LLM output. One Python file serves a
+Colin's Markdown Viewer: a fast local Markdown viewer for reading LLM output. One Python file serves a
 browser UI; no packages to install.
 
 ## Run
 
 ```bash
-python server.py D:\some\folder D:\another\folder
+python cmdv.py D:\some\folder D:\another\folder
 ```
 
 or, from the folder you want to browse:
 
 ```bash
-D:\Dropbox\academic\claude_research\markdown-viewer\mdview.cmd
+D:\Dropbox\academic\claude_research\markdown-viewer\cmdv.cmd
 ```
 
 The server binds to `127.0.0.1` only and can only read, and in edit mode
@@ -106,7 +106,7 @@ the CDN.
 
 ## Files
 
-- `server.py` — the whole backend (stdlib only)
+- `cmdv.py` — the whole backend (stdlib only)
 - `static/index.html`, `static/app.js`, `static/style.css` — the UI
 - `static/vendor/` — marked, DOMPurify, highlight.js, KaTeX, mermaid (via `vendor.py`)
 - `samples/demo.md` — a test document that exercises every feature

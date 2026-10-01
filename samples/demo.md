@@ -1,9 +1,9 @@
 ---
-title: mdview demo
+title: cmdv demo
 tags: [markdown, test]
 ---
 
-# mdview feature demo
+# cmdv feature demo
 
 This file exercises everything the renderer supports. Open it next to
 [the README](../README.md) to try split panes and in-app links.
@@ -62,7 +62,7 @@ fn fib(n: u64) -> u64 {
 ```
 
 ```bash
-python server.py D:\notes --port 8765
+python cmdv.py D:\notes --port 8765
 ```
 
 A block without a language:
@@ -92,7 +92,7 @@ $$
 
 ```mermaid
 flowchart LR
-    A[LLM writes .md] --> B{mdview polls mtime}
+    A[LLM writes .md] --> B{cmdv polls mtime}
     B -- changed --> C[re-render]
     C --> D[keep scroll / follow to bottom]
     B -- same --> B
@@ -102,7 +102,7 @@ flowchart LR
 sequenceDiagram
     participant U as User
     participant V as Viewer
-    participant S as server.py
+    participant S as cmdv.py
     U->>V: click file
     V->>S: GET /api/file
     S-->>V: content + mtime

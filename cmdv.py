@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-mdview - a fast local Markdown viewer.
+cmdv (Colin's Markdown Viewer) - a fast local Markdown viewer.
 
 Usage:
-    python server.py [ROOT ...] [--port 8765] [--no-open] [--browser]
+    python cmdv.py [ROOT ...] [--port 8765] [--no-open] [--browser]
 
 Serves a browser UI for browsing directories and reading Markdown files,
 with live reload when files change on disk. Only files under the given
@@ -158,7 +158,7 @@ INDEX = Index()
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "mdview/1.0"
+    server_version = "cmdv/1.0"
 
     def log_message(self, fmt, *args):
         if VERBOSE:
@@ -325,7 +325,7 @@ class Handler(BaseHTTPRequestHandler):
         if crlf:
             text = text.replace("\n", "\r\n")
         out = (b"\xef\xbb\xbf" if bom else b"") + text.encode("utf-8")
-        tmp = real + ".mdview-tmp"
+        tmp = real + ".cmdv-tmp"
         try:
             with open(tmp, "wb") as fh:
                 fh.write(out)
@@ -487,7 +487,7 @@ def main(argv=None):
     httpd.daemon_threads = True
 
     url = f"http://127.0.0.1:{port}/"
-    print(f"mdview serving {len(ROOTS)} root(s) at {url}")
+    print(f"cmdv serving {len(ROOTS)} root(s) at {url}")
     for r in ROOTS:
         print(f"  - {r}")
     print("Press Ctrl+C to stop.")

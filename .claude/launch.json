@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "mdview",
+      "name": "cmdv",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["server.py", "D:/Dropbox/academic/claude_research", "--port", "8790", "--no-open", "--verbose"],
+      "runtimeArgs": ["cmdv.py", "D:/Dropbox/academic/claude_research", "--port", "8790", "--no-open", "--verbose"],
       "port": 8790
     }
   ]

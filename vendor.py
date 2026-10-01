@@ -39,7 +39,7 @@ def fetch(url, dest, force=False):
     if dest.exists() and not force:
         return "cached"
     dest.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(url, headers={"User-Agent": "mdview-vendor/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "cmdv-vendor/1.0"})
     with urllib.request.urlopen(req, timeout=60) as r:
         data = r.read()
     dest.write_bytes(data)

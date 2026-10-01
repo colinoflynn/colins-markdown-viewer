@@ -1,5 +1,5 @@
 'use strict';
-/* mdview — client. Vanilla JS, no build step. */
+/* cmdv — client. Vanilla JS, no build step. */
 
 /* ============================================================ utils */
 const $ = (s, root = document) => root.querySelector(s);
@@ -73,8 +73,14 @@ const DEFAULTS = {
   sidebar: true, outline: true, sidebarWidth: 280, follow: true, showAll: false,
   recentOpen: true, treeOpen: true, tableView: 'auto',
 };
-const settings = Object.assign({}, DEFAULTS, store.get('mdview.settings', {}));
-const saveSettings = () => store.set('mdview.settings', settings);
+// the project was renamed from mdview: carry stored settings and sessions over once
+try {
+  for (const k of Object.keys(localStorage)) {
+    if (k.startsWith('mdview.') && localStorage.getItem('cmdv.' + k.slice(7)) == null) localStorage.setItem('cmdv.' + k.slice(7), localStorage.getItem(k));
+  }
+} catch { /* ignore */ }
+const settings = Object.assign({}, DEFAULTS, store.get('cmdv.settings', {}));
+const saveSettings = () => store.set('cmdv.settings', settings);
 
 const state = {
   roots: [], sep: '\\',
@@ -108,7 +114,7 @@ function resolveRel(docPath, rel) {
   if (/^[\\/]/.test(rel)) { const r = rootOf(docPath); return r ? joinPath(r.path, rel) : rel; }
   return joinPath(dirname(docPath), rel);
 }
-const sessionKey = () => 'mdview.session.' + state.roots.map(r => r.path).join('|');
+const sessionKey = () => 'cmdv.session.' + state.roots.map(r => r.path).join('|');
 
 /* ============================================================ markdown */
 function katexRender(tex, display) {
@@ -310,13 +316,13 @@ function postProcess(art, docPath) {
 }
 
 /* ---- tables: Table / Cards / Rows views, collapse, wide, sort, filter */
-function tablePrefs(docPath) { return (store.get('mdview.tables', {}) || {})[normPath(docPath)] || {}; }
+function tablePrefs(docPath) { return (store.get('cmdv.tables', {}) || {})[normPath(docPath)] || {}; }
 function saveTablePref(docPath, ti, pref) {
-  const all = store.get('mdview.tables', {}) || {};
+  const all = store.get('cmdv.tables', {}) || {};
   const k = normPath(docPath);
   all[k] = all[k] || {};
   all[k][ti] = Object.assign(all[k][ti] || {}, pref);
-  store.set('mdview.tables', all);
+  store.set('cmdv.tables', all);
 }
 function cloneCell(td) { const s = el('span', { class: 'cell-clone' }); for (const n of td.childNodes) s.append(n.cloneNode(true)); return s; }
 function cellNum(s) { const t = s.replace(/[,\s%]/g, ''); return t !== '' && !isNaN(t) ? parseFloat(t) : null; }
@@ -1120,7 +1126,7 @@ function restoreSession(sess) {
 /* ============================================================ active-tab dependent UI */
 function onActiveChanged() {
   const t = activeTab();
-  document.title = t ? basename(t.path) + ' – mdview' : 'mdview';
+  document.title = t ? basename(t.path) + ' – cmdv' : 'cmdv';
   $('#tb-raw').classList.toggle('on', !!(t && t.raw));
   $('#tb-edit').classList.toggle('on', !!(t && t.editing));
   updateCrumbs(); updateOutline(); updateStatus(); updateTreeMarks();
@@ -1655,7 +1661,7 @@ async function init() {
     const cfg = await api.get('config');
     state.roots = cfg.roots; state.sep = cfg.sep;
   } catch (e) {
-    document.body.replaceChildren(el('pre', { class: 'pane-error', style: 'padding:20px' }, 'Cannot reach the mdview server.\n' + e.message));
+    document.body.replaceChildren(el('pre', { class: 'pane-error', style: 'padding:20px' }, 'Cannot reach the cmdv server.\n' + e.message));
     return;
   }
   applySettings();
