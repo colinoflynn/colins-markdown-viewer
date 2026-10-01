@@ -884,10 +884,12 @@ function startEdit(t) {
   const save = el('button', { type: 'button', class: 'primary', title: 'Ctrl+S' }, 'Save');
   const done = el('button', { type: 'button', title: 'Save if needed and go back to reading' }, 'Done');
   const cancel = el('button', { type: 'button', title: 'Esc' }, 'Cancel');
+  const diffBtn = el('button', { type: 'button', class: 'small', hidden: true, title: 'What changed on disk since you opened the file' }, 'Show changes');
   save.addEventListener('click', () => saveEdit(t));
   done.addEventListener('click', async () => { if (!ed.dirty || await saveEdit(t)) stopEdit(t); });
   cancel.addEventListener('click', () => cancelEdit(t));
-  const bar = el('div', { class: 'editor-bar' }, name, status, el('span', { class: 'spacer' }), save, done, cancel);
+  diffBtn.addEventListener('click', () => { if (ed.diffEl) hideDiff(t); else showDiff(t); });
+  const bar = el('div', { class: 'editor-bar' }, name, status, diffBtn, el('span', { class: 'spacer' }), save, done, cancel);
   ta.addEventListener('input', () => { ed.dirty = ta.value !== ed.base; editorStatus(t); });
   ta.addEventListener('keydown', e => {
     if (e.key === 'Tab' && !e.ctrlKey && !e.altKey) {  // keep Tab in the text: two spaces, like most Markdown
@@ -896,10 +898,11 @@ function startEdit(t) {
       ta.setRangeText('  ', s, en, 'end'); ta.dispatchEvent(new Event('input'));
     }
   });
-  Object.assign(ed, { ta, status });
+  Object.assign(ed, { ta, status, diffBtn, editorEl: null, diffEl: null, disk: null, diskMtime: null });
   t.editing = ed; t.pinned = true;
   t.pane.classList.add('editing');
-  t.inner.replaceChildren(el('div', { class: 'editor' }, bar, ta));
+  ed.editorEl = el('div', { class: 'editor' }, bar, ta);
+  t.inner.replaceChildren(ed.editorEl);
   renderTabs(t.group); updateOutline();
   $('#tb-edit').classList.add('on');
   editorStatus(t);
@@ -919,6 +922,8 @@ function editorStatus(t) {
   const ed = t.editing; if (!ed) return;
   ed.status.className = 'status ' + (ed.conflict ? 'conflict' : ed.dirty ? 'dirty' : '');
   ed.status.textContent = ed.conflict ? '● changed on disk since you opened it' : ed.dirty ? '● unsaved' : 'saved';
+  ed.diffBtn.hidden = !ed.conflict;
+  ed.diffBtn.textContent = ed.diffEl ? 'Hide changes' : 'Show changes';
   renderTabs(t.group);
 }
 // the file changed on disk while editing (another tool wrote it)
@@ -926,9 +931,84 @@ function editorCheckDisk(t, d) {
   const ed = t.editing;
   if (d.mtime === ed.mtime) return;
   if (!ed.dirty) {  // nothing of ours to lose: take the new content
-    ed.base = d.content; ed.mtime = d.mtime; ed.ta.value = d.content; ed.conflict = false;
-  } else ed.conflict = true;
+    ed.base = d.content; ed.mtime = d.mtime; ed.ta.value = d.content; ed.conflict = false; ed.disk = null;
+    hideDiff(t);
+  } else {
+    ed.conflict = true; ed.disk = d.content; ed.diskMtime = d.mtime;
+    if (ed.diffEl) showDiff(t);  // refresh
+  }
   editorStatus(t);
+}
+
+/* ---- conflict diff: what changed on disk, relative to the version the editor started from */
+function showDiff(t) {
+  const ed = t.editing; if (!ed || ed.disk == null) return;
+  hideDiff(t);
+  const ops = diffLines(ed.base, ed.disk);
+  if (ops && ops.length > 1 && ops[ops.length - 1][0] === '=' && ops[ops.length - 1][1] === '') ops.pop();  // the empty line after a final newline
+  const pre = el('pre');
+  let add = 0, del = 0;
+  if (!ops) pre.append(el('div', { class: 'dl gap' }, 'The change is too large to show as a diff.'));
+  else {
+    const CTX = 3;
+    const show = ops.map((o, i) => o[0] !== '=' || ops.slice(Math.max(0, i - CTX), i + CTX + 1).some(p => p[0] !== '='));
+    let skipped = 0;
+    ops.forEach((o, i) => {
+      if (!show[i]) { skipped++; return; }
+      if (skipped) { pre.append(el('div', { class: 'dl gap' }, `⋯ ${skipped} unchanged line${skipped === 1 ? '' : 's'}`)); skipped = 0; }
+      if (o[0] === '+') add++; else if (o[0] === '-') del++;
+      pre.append(el('div', { class: 'dl ' + (o[0] === '+' ? 'add' : o[0] === '-' ? 'del' : 'ctx') }, (o[0] === '=' ? ' ' : o[0]) + ' ' + o[1]));
+    });
+    if (skipped) pre.append(el('div', { class: 'dl gap' }, `⋯ ${skipped} unchanged line${skipped === 1 ? '' : 's'}`));
+  }
+  const overwrite = el('button', { type: 'button', class: 'danger', title: 'Save your text over the version on disk' }, 'Overwrite with mine');
+  const takeDisk = el('button', { type: 'button', title: 'Replace your text with the version on disk' }, 'Use disk version');
+  overwrite.addEventListener('click', () => saveEdit(t, true));
+  takeDisk.addEventListener('click', () => {
+    if (ed.dirty && !confirm('Replace your unsaved text with the version on disk?')) return;
+    ed.ta.value = ed.disk; ed.base = ed.disk; ed.mtime = ed.diskMtime; ed.dirty = false; ed.conflict = false; ed.disk = null;
+    hideDiff(t); editorStatus(t);
+  });
+  const head = el('div', { class: 'editor-diff-head' },
+    el('span', {}, `Changed on disk since you opened it: `, el('b', { class: 'add' }, `+${add}`), ' ', el('b', { class: 'del' }, `−${del}`), ' lines'),
+    el('span', { class: 'spacer' }), overwrite, takeDisk);
+  ed.diffEl = el('div', { class: 'editor-diff' }, head, pre);
+  ed.editorEl.insertBefore(ed.diffEl, ed.ta);
+  editorStatus(t);
+}
+function hideDiff(t) {
+  const ed = t.editing; if (!ed || !ed.diffEl) return;
+  ed.diffEl.remove(); ed.diffEl = null;
+  editorStatus(t);
+}
+// Myers line diff: ops are ['=', line], ['-', line] (only in a) or ['+', line] (only in b).
+// Returns null when the edit distance is too large to be worth showing.
+function diffLines(aText, bText) {
+  const a = aText.split('\n'), b = bText.split('\n');
+  const N = a.length, M = b.length, MAX = N + M, LIMIT = 4000;
+  const v = new Map([[1, 0]]), trace = [];
+  let found = false;
+  for (let d = 0; d <= MAX && !found; d++) {
+    if (d > LIMIT) return null;
+    trace.push(new Map(v));
+    for (let k = -d; k <= d; k += 2) {
+      let x = (k === -d || (k !== d && v.get(k - 1) < v.get(k + 1))) ? v.get(k + 1) : v.get(k - 1) + 1;
+      let y = x - k;
+      while (x < N && y < M && a[x] === b[y]) { x++; y++; }
+      v.set(k, x);
+      if (x >= N && y >= M) { found = true; break; }
+    }
+  }
+  const ops = [];
+  let x = N, y = M;
+  for (let d = trace.length - 1; d >= 0; d--) {
+    const vd = trace[d], k = x - y;
+    const prevK = (k === -d || (k !== d && vd.get(k - 1) < vd.get(k + 1))) ? k + 1 : k - 1;
+    const prevX = vd.get(prevK), prevY = prevX - prevK;
+    while (x > prevX && y > prevY) { ops.push(['=', a[x - 1]]); x--; y--; }
+    if (d > 0) { if (x === prevX) { ops.push(['+', b[y - 1]]); y--; } else { ops.push(['-', a[x - 1]]); x--; } }
+  }
+  return ops.reverse();
 }
 async function saveEdit(t, force = false) {
   const ed = t.editing; if (!ed) return false;
@@ -937,15 +1017,20 @@ async function saveEdit(t, force = false) {
     const d = state.docs.get(t.path) || { path: t.path };
     Object.assign(d, { content: ed.ta.value, mtime: r.mtime, size: r.size, error: null });
     state.docs.set(t.path, d);
-    ed.base = ed.ta.value; ed.mtime = r.mtime; ed.dirty = false; ed.conflict = false;
-    editorStatus(t);
+    ed.base = ed.ta.value; ed.mtime = r.mtime; ed.dirty = false; ed.conflict = false; ed.disk = null;
+    hideDiff(t); editorStatus(t);
     for (const x of allTabs()) if (x !== t && samePath(x.path, t.path)) renderTab(x);
     refreshRecent(); updateStatus();
     toast('Saved');
     return true;
   } catch (e) {
     if (/changed on disk/.test(e.message) && !force) {
-      if (confirm('The file changed on disk since you opened it. Overwrite it with your version?')) return saveEdit(t, true);
+      try {
+        const d = await api.get('file', { path: t.path });
+        state.docs.set(t.path, d);
+        ed.conflict = true; ed.disk = d.content; ed.diskMtime = d.mtime;
+        showDiff(t);
+      } catch (e2) { toast('Save failed: ' + e2.message); }
       return false;
     }
     toast('Save failed: ' + e.message);

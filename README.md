@@ -72,8 +72,9 @@ the CDN.
   things. Ctrl+S saves, *Done* saves and returns to reading, Esc or *Cancel*
   discards (asking first if there are unsaved changes). The caret starts at
   the heading you were reading. Saving keeps the file's own line endings and
-  BOM, and refuses to overwrite a file that changed on disk since you opened
-  it unless you confirm. Only Markdown and the text types the viewer lists can
+  BOM. If the file changed on disk while you were editing, saving does not
+  overwrite it: the editor shows a diff of what changed on disk and lets you
+  overwrite with your text or take the disk version instead. Only Markdown and the text types the viewer lists can
   be saved, and only under the roots you passed.
 - **Settings** (⚙): theme (Light, Paper, Dark, Dim, or follow the OS; *System*
   and the ◐ toggle use whichever light and dark variants you picked last), font
